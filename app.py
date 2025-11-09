@@ -677,8 +677,7 @@ def get_calendar_service():
 def oauth_redirect_uri():
     return 'http://localhost:9000/oauth2callback'
 
-@app.route('/')
-def index():
+def _render_index(page_name: str):
     calendar_api_key = os.getenv('CALENDAR_API_KEY')
     if not calendar_api_key:
         app.logger.warning('CALENDAR_API_KEY not set; Google Calendar API calls will fail.')
@@ -695,8 +694,24 @@ def index():
         google_scopes='https://www.googleapis.com/auth/calendar',
         user_id=user_id,
         user_profile=session.get('user_profile', {}),
+        page_name=page_name,
     )
     
+
+@app.route('/')
+def index():
+    return _render_index('home')
+
+
+@app.route('/stats')
+def stats_page():
+    return _render_index('stats')
+
+
+@app.route('/imports')
+def imports_page():
+    return _render_index('imports')
+
 @app.route('/debug')
 def debug():
     import os
