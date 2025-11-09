@@ -13,7 +13,12 @@ import os
 
 # Force correct paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "assets"),
+    static_url_path="/assets",
+)
 
 app.secret_key = os.urandom(24)          # random secret for session
 CREDENTIALS_FILE = 'credentials.json'

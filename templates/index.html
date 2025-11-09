@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FocusFlow - AI Task Scheduler</title>
+    <title>LockIN - AI Task Scheduler</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Mulish:wght@200;300;400;500;600;700;800;900&display=swap"
       rel="stylesheet"
@@ -67,9 +67,12 @@
         margin-bottom: 30px;
       }
 
-      .header h1 {
-        font-size: 2.5em;
-        margin-bottom: 10px;
+      .header .logo {
+        max-width: 200px;
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto 10px;
       }
 
       .header p {
@@ -210,27 +213,63 @@
         margin-bottom: 20px;
       }
 
+      .calendar-nav {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .nav-btn {
+        background: #edf2f7;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 18px;
+        color: #4a5568;
+        transition: background 0.2s, transform 0.2s;
+      }
+
+      .nav-btn:hover {
+        background: #cbd5f5;
+        transform: translateY(-1px);
+      }
+
+      .nav-btn:active {
+        transform: scale(0.95);
+      }
+
       .week-view {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .week-view-header,
+      .week-view-grid {
         display: grid;
         grid-template-columns: 80px repeat(7, 1fr);
         gap: 10px;
       }
 
-      .time-label {
+      .time-slot-label {
         color: #718096;
         font-size: 12px;
         text-align: right;
         padding-right: 10px;
         height: 60px;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: flex-end;
       }
 
-      .day-column {
-        border-left: 1px solid #e2e8f0;
-        position: relative;
-        min-height: 60px;
+      .time-column {
+        display: flex;
+        flex-direction: column;
       }
 
       .day-header {
@@ -238,19 +277,31 @@
         color: #2d3748;
         text-align: center;
         padding: 10px;
-        border-bottom: 2px solid #e2e8f0;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
       }
 
-      .time-slot {
-        height: 60px;
-        border-bottom: 1px solid #f0f0f0;
+      .day-column-body {
         position: relative;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #ffffff;
+        overflow: visible;
+      }
+
+      .hour-divider {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 0;
+        border-top: 1px solid #f0f0f0;
       }
 
       .scheduled-task {
         position: absolute;
-        left: 2px;
-        right: 2px;
+        left: 8px;
+        right: 8px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 8px;
@@ -260,6 +311,9 @@
         z-index: 10;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
 
       .scheduled-task:hover {
@@ -276,6 +330,20 @@
 
       .scheduled-task.external-event {
         background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+      }
+
+      .deadline-flag {
+        position: absolute;
+        right: 12px;
+        background: #e53e3e;
+        color: #fff;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        box-shadow: 0 2px 4px rgba(229, 62, 62, 0.2);
       }
 
       .notification {
@@ -526,13 +594,20 @@
         .stats-grid {
           grid-template-columns: repeat(2, 1fr);
         }
+        .logo {
+          height: 100px;
+        }
       }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="header">
-        <h1>🎯 FocusFlow</h1>
+        <img
+          src="{{ url_for('static', filename='images/LockIN-logo-noBG.png') }}"
+          class="logo"
+          alt="LockIN logo"
+        />
         <p>AI-Powered Task Scheduling with Pomodoro Tracking</p>
         <button onclick="requestNotificationPermission()">
           Enable Notifications
@@ -586,8 +661,18 @@
         <div class="calendar-section">
           <div class="calendar-header">
             <h2 style="color: #2d3748">Week View</h2>
-            <div>
+            <div class="calendar-nav">
+              <button
+                class="nav-btn"
+                id="prevWeekBtn"
+                aria-label="Previous week"
+              >
+                &lsaquo;
+              </button>
               <span id="currentWeek" style="color: #718096"></span>
+              <button class="nav-btn" id="nextWeekBtn" aria-label="Next week">
+                &rsaquo;
+              </button>
             </div>
           </div>
           <div class="week-view" id="weekView">
@@ -701,10 +786,18 @@
       let domReady = false;
       window.gapiLoaded = window.gapiLoaded || false;
       let calendarApiLoaded = false;
+      let googleAccountAuthenticated = false;
+      let currentWeekStart = getStartOfWeek(new Date());
 
       // Initialize the app
       function init() {
         setDefaultDeadline();
+        const prevWeekBtn = document.getElementById("prevWeekBtn");
+        const nextWeekBtn = document.getElementById("nextWeekBtn");
+        if (prevWeekBtn && nextWeekBtn) {
+          prevWeekBtn.addEventListener("click", () => changeWeek(-1));
+          nextWeekBtn.addEventListener("click", () => changeWeek(1));
+        }
         renderTasks();
         renderCalendar();
         updateStats();
@@ -715,6 +808,7 @@
           .then((r) => r.json())
           .then((data) => {
             document.getElementById("googleCalSection").style.display = "block";
+            googleAccountAuthenticated = !!data.authenticated;
             if (data.authenticated) {
               document.getElementById("connectBtn").textContent = "Connected";
               document.getElementById("connectBtn").disabled = true;
@@ -745,6 +839,14 @@
       //       });
       //     });
       // }
+      function getStartOfWeek(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        d.setDate(d.getDate() - day);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+
       // Set default deadline to tomorrow
       function setDefaultDeadline() {
         const tomorrow = new Date();
@@ -1132,104 +1234,180 @@
           .join("");
       }
 
+      const CALENDAR_DAY_START = 8;
+      const CALENDAR_DAY_END = 20;
+      const CALENDAR_SLOT_HEIGHT = 60;
+
+      function formatCalendarTime(date) {
+        return date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        });
+      }
+
+      function formatHourLabel(hour) {
+        const temp = new Date();
+        temp.setHours(hour, 0, 0, 0);
+        return temp.toLocaleTimeString([], { hour: "numeric", hour12: true });
+      }
+
       // Render calendar with deadlines
       function renderCalendar() {
         const container = document.getElementById("weekView");
+        if (!container) {
+          return;
+        }
         const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
+        const startOfWeek = new Date(currentWeekStart);
 
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const hours = Array.from({ length: 13 }, (_, i) => i + 8); // 8 AM to 8 PM
+        const hours = Array.from(
+          { length: CALENDAR_DAY_END - CALENDAR_DAY_START + 1 },
+          (_, i) => CALENDAR_DAY_START + i
+        );
 
-        // Header row
-        let html = "<div></div>"; // Empty corner
-        days.forEach((day, i) => {
+        let headerHtml = '<div class="week-view-header"><div></div>';
+        days.forEach((day, index) => {
           const date = new Date(startOfWeek);
-          date.setDate(startOfWeek.getDate() + i);
+          date.setDate(startOfWeek.getDate() + index);
           const isToday = date.toDateString() === now.toDateString();
-          html += `<div class="day-header" style="${
-            isToday ? "background: #e6fffa;" : ""
+          headerHtml += `<div class="day-header" style="${
+            isToday ? "background: #e6fffa; border-color: #0bc5ea;" : ""
           }">
-                    ${day}<br><small>${date.getDate()}</small>
-                </div>`;
+              ${day}<br><small>${date.getDate()}</small>
+            </div>`;
         });
+        headerHtml += "</div>";
 
-        // Time slots
+        let bodyHtml = '<div class="week-view-grid">';
+        bodyHtml += '<div class="time-column">';
         hours.forEach((hour) => {
-          html += `<div class="time-label">${hour}:00</div>`;
+          bodyHtml += `<div class="time-slot-label">${formatHourLabel(
+            hour
+          )}</div>`;
+        });
+        bodyHtml += "</div>";
 
-          days.forEach((_, dayIndex) => {
-            const slotDate = new Date(startOfWeek);
-            slotDate.setDate(startOfWeek.getDate() + dayIndex);
-            slotDate.setHours(hour, 0, 0, 0);
+        days.forEach((_, dayIndex) => {
+          const dayDate = new Date(startOfWeek);
+          dayDate.setDate(startOfWeek.getDate() + dayIndex);
+          const dayStart = new Date(dayDate);
+          dayStart.setHours(CALENDAR_DAY_START, 0, 0, 0);
+          const dayEnd = new Date(dayDate);
+          dayEnd.setHours(CALENDAR_DAY_END + 1, 0, 0, 0);
+          const totalMinutes = (dayEnd - dayStart) / 60000;
 
-            const scheduledItems = schedule.filter((s) => {
-              const sDate = new Date(s.start);
-              return (
-                sDate.getHours() === hour &&
-                sDate.toDateString() === slotDate.toDateString() &&
-                s.type !== "deadline"
-              );
-            });
+          let columnHtml = `<div class="day-column-body" style="height: ${
+            hours.length * CALENDAR_SLOT_HEIGHT
+          }px">`;
 
-            // Check for deadlines on this day
-            const deadlines = tasks.filter((t) => {
-              const deadline = new Date(t.deadline);
-              return (
-                deadline.toDateString() === slotDate.toDateString() &&
-                deadline.getHours() === hour
-              );
-            });
-
-            html +=
-              '<div class="day-column time-slot" style="position: relative;">';
-
-            // Render scheduled tasks
-            scheduledItems.forEach((item) => {
-              const statusClass =
-                item.status === "completed"
-                  ? "completed"
-                  : item.status === "in-progress"
-                  ? "in-progress"
-                  : "";
-              const isExternal = item.source === "google";
-              const clickHandler = isExternal
-                ? ""
-                : `onclick="handleScheduleClick(${item.id})"`;
-              html += `
-                            <div class="scheduled-task ${statusClass}${
-                isExternal ? " external-event" : ""
-              }" ${clickHandler}>
-                                ${item.taskName}
-                            </div>
-                        `;
-            });
-
-            // Render deadline indicators
-            deadlines.forEach((task) => {
-              const leftPosition =
-                (task.deadline.getMinutes() / 60) * 100 + "%";
-              html += `
-                            <div class="deadline-indicator" style="left: ${leftPosition};">
-                                <div class="deadline-label">📍 ${task.name}</div>
-                            </div>
-                        `;
-            });
-
-            html += "</div>";
+          hours.forEach((_, hourIndex) => {
+            const top = hourIndex * CALENDAR_SLOT_HEIGHT;
+            columnHtml += `<div class="hour-divider" style="top: ${top}px"></div>`;
           });
+
+          const dayEvents = schedule.filter((item) => {
+            if (!item || item.type === "deadline") {
+              return false;
+            }
+            const eventStart = new Date(item.start);
+            const eventEnd = new Date(item.end || item.start);
+            return eventEnd > dayStart && eventStart < dayEnd;
+          });
+
+          dayEvents.forEach((item) => {
+            const eventStart = new Date(item.start);
+            const eventEnd = new Date(item.end || item.start);
+            const startMinutes = Math.max(0, (eventStart - dayStart) / 60000);
+            const endMinutes = Math.min(
+              totalMinutes,
+              (eventEnd - dayStart) / 60000
+            );
+            const clampedDuration = Math.max(endMinutes - startMinutes, 30);
+            if (startMinutes >= totalMinutes || endMinutes <= 0) {
+              return;
+            }
+            const top = (startMinutes / 60) * CALENDAR_SLOT_HEIGHT;
+            const height = (clampedDuration / 60) * CALENDAR_SLOT_HEIGHT;
+
+            const statusClass =
+              item.status === "completed"
+                ? "completed"
+                : item.status === "in-progress"
+                ? "in-progress"
+                : "";
+            const isExternal = item.source === "google";
+            const clickHandler = isExternal
+              ? ""
+              : `onclick="handleScheduleClick(${item.id})"`;
+            const timeRange = `${formatCalendarTime(
+              eventStart
+            )} - ${formatCalendarTime(eventEnd)}`;
+
+            columnHtml += `<div class="scheduled-task ${statusClass}${
+              isExternal ? " external-event" : ""
+            }" style="top: ${top}px; height: ${Math.max(
+              height,
+              32
+            )}px;" ${clickHandler}>
+                <span>${item.taskName}</span>
+                <small>${timeRange}</small>
+              </div>`;
+          });
+
+          const dayDeadlines = tasks.filter((task) => {
+            const deadline = new Date(task.deadline);
+            return (
+              deadline >= dayStart &&
+              deadline <= dayEnd &&
+              task.status !== "completed"
+            );
+          });
+
+          dayDeadlines.forEach((task) => {
+            const deadlineDate = new Date(task.deadline);
+            const minutesFromStart = (deadlineDate - dayStart) / 60000;
+            const top = Math.max(
+              0,
+              (minutesFromStart / 60) * CALENDAR_SLOT_HEIGHT - 12
+            );
+            columnHtml += `<div class="deadline-flag" style="top: ${top}px;">
+                <span>📍</span>
+                <span>${task.name}</span>
+              </div>`;
+          });
+
+          columnHtml += "</div>";
+          bodyHtml += columnHtml;
         });
 
-        container.innerHTML = html;
+        bodyHtml += "</div>";
 
-        // Update week display
+        container.innerHTML = headerHtml + bodyHtml;
+
         const weekEnd = new Date(startOfWeek);
         weekEnd.setDate(startOfWeek.getDate() + 6);
         document.getElementById(
           "currentWeek"
         ).textContent = `${startOfWeek.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`;
+      }
+
+      function changeWeek(offset) {
+        currentWeekStart.setDate(currentWeekStart.getDate() + offset * 7);
+        currentWeekStart = getStartOfWeek(currentWeekStart);
+        renderCalendar();
+        if (googleAccountAuthenticated) {
+          const eventsContainer = document.getElementById("calendarEvents");
+          if (eventsContainer) {
+            eventsContainer.innerHTML = "<p>Loading events...</p>";
+          }
+          ensureCalendarApiLoaded()
+            .then(() => loadCalendarEvents(currentWeekStart))
+            .catch((error) =>
+              console.error("Failed to refresh calendar events", error)
+            );
+        }
       }
 
       // Handle click on scheduled item
@@ -1286,7 +1464,7 @@
       function updateSigninStatus(isSignedIn) {
         if (isSignedIn && gapi.client.getToken()) {
           ensureCalendarApiLoaded()
-            .then(() => loadCalendarEvents())
+            .then(() => loadCalendarEvents(currentWeekStart))
             .catch((error) => {
               console.error("Google Calendar API not ready", error);
             });
@@ -1314,14 +1492,20 @@
         window.location.href = "/auth";
       }
 
-      function loadCalendarEvents() {
+      function loadCalendarEvents(weekStart = currentWeekStart) {
+        const startWindow = new Date(weekStart);
+        startWindow.setHours(0, 0, 0, 0);
+        const endWindow = new Date(weekStart);
+        endWindow.setDate(endWindow.getDate() + 7);
+        endWindow.setHours(23, 59, 59, 999);
         gapi.client.calendar.events
           .list({
             calendarId: "primary",
-            timeMin: new Date().toISOString(),
+            timeMin: startWindow.toISOString(),
+            timeMax: endWindow.toISOString(),
             showDeleted: false,
             singleEvents: true,
-            maxResults: 10,
+            maxResults: 250,
             orderBy: "startTime",
           })
           .then((response) => {
@@ -1443,6 +1627,10 @@
             location: event.location || "",
           });
         });
+
+        schedule.sort(
+          (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+        );
 
         saveSchedule();
         renderCalendar();
