@@ -59,15 +59,6 @@ SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile',
 ]
 
-GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON', '').strip()
-GOOGLE_CLIENT_CONFIG: Dict[str, Any] | None = None
-if GOOGLE_CREDENTIALS_JSON:
-    try:
-        GOOGLE_CLIENT_CONFIG = json.loads(GOOGLE_CREDENTIALS_JSON)
-    except json.JSONDecodeError:
-        logger.warning('Invalid GOOGLE_CREDENTIALS_JSON provided; falling back to credentials.json file.')
-        GOOGLE_CLIENT_CONFIG = None
-
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
 try:
@@ -683,18 +674,8 @@ def get_calendar_service():
     credentials = pickle.loads(session['credentials'])
     return build('calendar', 'v3', credentials=credentials)
 
-def oauth_redirect_uri() -> str:
-    forwarded_proto = request.headers.get('X-Forwarded-Proto', request.scheme or 'http')
-    host = request.headers.get('Host', request.host)
-    return f"{forwarded_proto}://{host}/oauth2callback"
-
-
-def create_google_flow() -> InstalledAppFlow:
-    if GOOGLE_CLIENT_CONFIG:
-        return InstalledAppFlow.from_client_config(GOOGLE_CLIENT_CONFIG, SCOPES)
-    if os.path.exists(CREDENTIALS_FILE):
-        return InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-    raise RuntimeError('Google OAuth credentials are not configured.')
+def oauth_redirect_uri():
+    return 'http://localhost:9000/oauth2callback'
 
 def _render_index(page_name: str):
     calendar_api_key = os.getenv('CALENDAR_API_KEY')
@@ -742,13 +723,8 @@ def debug():
     }
 @app.route('/auth')
 def auth():
-    try:
-        flow = create_google_flow()
-    except RuntimeError as exc:
-        logger.error('Unable to start Google OAuth flow: %s', exc)
-        return jsonify({'error': 'Google OAuth is not configured.'}), 500
-
-    flow.redirect_uri = oauth_redirect_uri()
+    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+    flow.redirect_uri = f"http://{request.host}/oauth2callback"
     auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
     return redirect(auth_url)
 
@@ -765,13 +741,8 @@ def oauth2callback():
     # ALLOW HTTP FOR LOCAL DEV
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    try:
-        flow = create_google_flow()
-    except RuntimeError as exc:
-        logger.error('Unable to complete Google OAuth flow: %s', exc)
-        return jsonify({'error': 'Google OAuth is not configured.'}), 500
-
-    flow.redirect_uri = oauth_redirect_uri()
+    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+    flow.redirect_uri = f"http://{request.host}/oauth2callback"
     flow.fetch_token(authorization_response=request.url)
     credentials = flow.credentials
     session['credentials'] = pickle.dumps(credentials)
