@@ -1187,8 +1187,8 @@
       let calendarApiLoaded = false;
       let googleAccountAuthenticated = false;
       let currentWeekStart = getStartOfWeek(new Date());
-  let calendarScrollInitialized = false;
-  let userAdjustedCalendarScroll = false;
+      let calendarScrollInitialized = false;
+      let userAdjustedCalendarScroll = false;
 
       function setGoogleCalendarExpanded(expand, persist = true) {
         const toggle = document.getElementById("googleCalToggle");
@@ -1731,11 +1731,11 @@
           .join("");
       }
 
-  const CALENDAR_DAY_START = 0;
-  const CALENDAR_DAY_END = 23;
-  const DEFAULT_CALENDAR_VIEW_START = 8;
-  const DEFAULT_CALENDAR_VIEW_END = 20;
-  const CALENDAR_SLOT_HEIGHT = 60;
+      const CALENDAR_DAY_START = 0;
+      const CALENDAR_DAY_END = 23;
+      const DEFAULT_CALENDAR_VIEW_START = 8;
+      const DEFAULT_CALENDAR_VIEW_END = 20;
+      const CALENDAR_SLOT_HEIGHT = 60;
 
       function formatCalendarTime(date) {
         return date.toLocaleTimeString([], {
@@ -2068,6 +2068,7 @@
             saveSchedule();
             renderCalendar();
             updateGoogleAuthUI();
+            window.location.reload();
           })
           .catch((error) => {
             console.error("Failed to logout from Google", error);
