@@ -11,9 +11,12 @@ import google.generativeai as genai
 
 import os
 from uuid import uuid4
+from typing import Optional
 
 # Force correct paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'todo.db')
+
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, "templates"),
@@ -35,7 +38,8 @@ def ensure_user_id():
 
 
 # Database setup
-conn = sqlite3.connect('todo.db', check_same_thread=False)
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+conn.execute('PRAGMA foreign_keys = ON')
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS tasks
              (id INTEGER PRIMARY KEY, name TEXT, deadline DATE, days_req INTEGER, hours_daily INTEGER,
@@ -47,6 +51,207 @@ c.execute('''CREATE TABLE IF NOT EXISTS reasons
 c.execute('''CREATE TABLE IF NOT EXISTS feedback
              (id INTEGER PRIMARY KEY, task_id INTEGER, extra_time_needed INTEGER, timestamp DATETIME)''')
 conn.commit()
+
+
+def column_exists(table: str, column: str) -> bool:
+    c.execute(f"PRAGMA table_info({table})")
+    return any(row[1] == column for row in c.fetchall())
+
+
+def compute_priority_score(deadline_value, status, missed, estimated_minutes, actual_minutes, completed) -> float:
+    today = datetime.date.today()
+    score = 0.0
+
+    deadline_days = None
+    if deadline_value:
+        try:
+            if isinstance(deadline_value, datetime.date):
+                deadline_days = (deadline_value - today).days
+            else:
+                deadline_days = (datetime.date.fromisoformat(str(deadline_value)) - today).days
+        except (ValueError, TypeError):
+            deadline_days = None
+
+    if deadline_days is None:
+        score += 10.0
+    elif deadline_days < 0:
+        score += 120.0
+    else:
+        score += max(0.0, 60.0 - float(deadline_days))
+
+    status_key = (status or 'planned').lower()
+    status_weights = {
+        'planned': 10.0,
+        'in_progress': 20.0,
+        'at_risk': 32.0,
+        'stalled': 35.0,
+        'completed': 0.0,
+    }
+    score += status_weights.get(status_key, 15.0)
+
+    score += min(float(missed or 0) * 5.0, 30.0)
+
+    est_minutes = float(estimated_minutes or 0)
+    act_minutes = float(actual_minutes or 0)
+    if est_minutes > 0:
+        progress_ratio = act_minutes / est_minutes
+        if progress_ratio < 0.25:
+            score += 5.0
+        elif progress_ratio < 0.75:
+            score += 10.0
+        elif progress_ratio <= 1.1:
+            score += 5.0
+        else:
+            score += 15.0
+    else:
+        score += 5.0
+
+    if completed or status_key == 'completed':
+        return 0.0
+
+    return round(min(score, 200.0), 2)
+
+
+def recompute_task_priority(task_id: int) -> None:
+    c.execute(
+        """
+        SELECT deadline, status, missed, estimated_minutes, actual_minutes,
+               days_req, hours_daily, completed
+        FROM tasks
+        WHERE id=?
+        """,
+        (task_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        return
+
+    deadline, status, missed, estimated_minutes, actual_minutes, days_req, hours_daily, completed = row
+    estimated_minutes = estimated_minutes or 0
+    if not estimated_minutes and days_req and hours_daily:
+        try:
+            estimated_minutes = int(days_req) * int(hours_daily) * 60
+        except (TypeError, ValueError):
+            estimated_minutes = 0
+        c.execute(
+            "UPDATE tasks SET estimated_minutes = ? WHERE id = ?",
+            (estimated_minutes, task_id),
+        )
+
+    score = compute_priority_score(
+        deadline,
+        status,
+        missed,
+        estimated_minutes,
+        actual_minutes,
+        completed,
+    )
+    c.execute(
+        "UPDATE tasks SET priority_score = ? WHERE id = ?",
+        (score, task_id),
+    )
+
+
+def record_task_activity(task_id: int, minutes: int = 0, status: Optional[str] = None,
+                         activity_time: Optional[datetime.datetime] = None) -> None:
+    activity_time = activity_time or datetime.datetime.now()
+    updates = []
+    params: list = []
+
+    if minutes:
+        updates.append("actual_minutes = COALESCE(actual_minutes, 0) + ?")
+        params.append(int(minutes))
+
+    if status:
+        updates.append("status = ?")
+        params.append(status)
+
+    updates.append("last_activity_at = ?")
+    params.append(activity_time)
+    params.append(task_id)
+
+    if updates:
+        c.execute(
+            f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        recompute_task_priority(task_id)
+
+
+def upgrade_schema() -> None:
+    new_columns = {
+        'category': "TEXT DEFAULT 'general'",
+        'status': "TEXT DEFAULT 'planned'",
+        'estimated_minutes': 'INTEGER DEFAULT 0',
+        'actual_minutes': 'INTEGER DEFAULT 0',
+        'priority_score': 'REAL DEFAULT 0',
+        'last_activity_at': 'DATETIME',
+    }
+
+    for column, definition in new_columns.items():
+        if not column_exists('tasks', column):
+            c.execute(f"ALTER TABLE tasks ADD COLUMN {column} {definition}")
+
+    c.execute(
+        "UPDATE tasks SET status = CASE WHEN completed=1 THEN 'completed' ELSE COALESCE(NULLIF(status, ''), 'planned') END"
+    )
+    c.execute(
+        "UPDATE tasks SET category = COALESCE(NULLIF(category, ''), 'general')"
+    )
+    c.execute("UPDATE tasks SET actual_minutes = COALESCE(actual_minutes, 0)")
+    c.execute(
+        "UPDATE tasks SET estimated_minutes = COALESCE(estimated_minutes, 0)"
+    )
+
+    c.execute(
+        '''CREATE TABLE IF NOT EXISTS task_sessions (
+               id INTEGER PRIMARY KEY,
+               task_id INTEGER,
+               started_at DATETIME,
+               ended_at DATETIME,
+               duration_minutes INTEGER,
+               intensity TEXT,
+               notes TEXT,
+               user_id TEXT,
+               FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+           )'''
+    )
+
+    c.execute(
+        '''CREATE TABLE IF NOT EXISTS task_metrics (
+               id INTEGER PRIMARY KEY,
+               task_id INTEGER,
+               metric_date DATE,
+               focus_score REAL,
+               energy_level TEXT,
+               user_id TEXT,
+               notes TEXT,
+               FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+           )'''
+    )
+
+    conn.commit()
+
+    c.execute("SELECT id, days_req, hours_daily FROM tasks")
+    for task_id, days_req, hours_daily in c.fetchall():
+        estimated_minutes = 0
+        if days_req and hours_daily:
+            try:
+                estimated_minutes = int(days_req) * int(hours_daily) * 60
+            except (TypeError, ValueError):
+                estimated_minutes = 0
+
+        if estimated_minutes:
+            c.execute(
+                "UPDATE tasks SET estimated_minutes = COALESCE(NULLIF(estimated_minutes, 0), ?) WHERE id = ?",
+                (estimated_minutes, task_id),
+            )
+        recompute_task_priority(task_id)
+
+    conn.commit()
+
+
+upgrade_schema()
 
 def get_calendar_service():
     if 'credentials' not in session:
@@ -129,6 +334,20 @@ def add_task():
     c.execute("INSERT INTO tasks (name, deadline, days_req, hours_daily, user_id) VALUES (?, ?, ?, ?, ?)",
               (name, deadline, days_req, hours_daily, user_id))
     task_id = c.lastrowid
+
+    estimated_minutes = int(days_req * hours_daily * 60)
+    c.execute(
+        """
+        UPDATE tasks
+        SET estimated_minutes = ?,
+            status = COALESCE(NULLIF(status, ''), 'planned'),
+            category = COALESCE(NULLIF(category, ''), 'general')
+        WHERE id = ?
+        """,
+        (estimated_minutes, task_id),
+    )
+
+    recompute_task_priority(task_id)
     conn.commit()
 
     # Suggest slots (Pomodoro: 25 min work + 5 min break, fit into productive times e.g., 9-5)
@@ -199,10 +418,116 @@ def get_task_name(task_id):
 @app.route('/get_priorities')
 def get_priorities():
     user_id = session.get('user_id', 'default')
-    c.execute("SELECT * FROM tasks WHERE user_id=? AND completed=0 ORDER BY deadline ASC", (user_id,))
-    tasks = c.fetchall()
-    priorities = [{'id': t[0], 'name': t[1], 'deadline': t[2], 'priority': (datetime.date.fromisoformat(t[2]) - datetime.date.today()).days} for t in tasks]
-    return jsonify(priorities)
+    c.execute(
+        """
+        SELECT id, name, deadline, missed, category, status,
+               estimated_minutes, actual_minutes, priority_score
+        FROM tasks
+        WHERE user_id=? AND completed=0
+        """,
+        (user_id,),
+    )
+    rows = c.fetchall()
+
+    today = datetime.date.today()
+    items = []
+    for row in rows:
+        deadline_value = row[2]
+        days_until = None
+        if deadline_value:
+            try:
+                days_until = (datetime.date.fromisoformat(str(deadline_value)) - today).days
+            except ValueError:
+                days_until = None
+
+        items.append({
+            'id': row[0],
+            'name': row[1],
+            'deadline': row[2],
+            'daysUntilDeadline': days_until,
+            'missedSlots': row[3],
+            'category': row[4],
+            'status': row[5],
+            'estimatedMinutes': row[6],
+            'actualMinutes': row[7],
+            'priorityScore': row[8],
+        })
+
+    items.sort(key=lambda entry: entry.get('priorityScore', 0), reverse=True)
+    return jsonify(items)
+
+@app.route('/priority_overview')
+def priority_overview():
+    user_id = session.get('user_id', 'default')
+    c.execute(
+        """
+        SELECT id, name, deadline, missed, category, status,
+               estimated_minutes, actual_minutes, priority_score
+        FROM tasks
+        WHERE user_id=?
+        """,
+        (user_id,),
+    )
+    rows = c.fetchall()
+
+    today = datetime.date.today()
+    overview = []
+    for row in rows:
+        task_id, name, deadline_value, missed, category, status, est_minutes, act_minutes, score = row
+        days_until = None
+        if deadline_value:
+            try:
+                days_until = (datetime.date.fromisoformat(str(deadline_value)) - today).days
+            except ValueError:
+                days_until = None
+
+        est_minutes = est_minutes or 0
+        act_minutes = act_minutes or 0
+        progress = None
+        if est_minutes > 0:
+            progress = round((act_minutes / est_minutes) * 100, 1)
+
+        tips = []
+        if days_until is None:
+            tips.append("Add a clear deadline so the planner can prioritize it.")
+        elif days_until < 0:
+            tips.append("Deadline passed—reschedule the work and notify stakeholders.")
+        elif days_until <= 1:
+            tips.append("Block at least one deep-focus session today.")
+        elif days_until <= 3:
+            tips.append("Reserve a high-energy block within the next 48 hours.")
+        elif est_minutes and (est_minutes - act_minutes) <= 60:
+            tips.append("You're close—schedule a final push to wrap it up.")
+
+        if progress is not None and progress < 40:
+            tips.append("Momentum is low; start with a short pomodoro to regain flow.")
+
+        if missed:
+            tips.append("Review missed slots and adjust the schedule for better fit.")
+
+        if not tips:
+            tips.append("Keep the pace steady and maintain your habit streak.")
+
+        overview.append({
+            'id': task_id,
+            'name': name,
+            'category': category,
+            'status': status,
+            'deadline': deadline_value,
+            'daysUntilDeadline': days_until,
+            'missedSlots': missed,
+            'estimatedMinutes': est_minutes,
+            'actualMinutes': act_minutes,
+            'progressPercent': progress,
+            'priorityScore': score,
+            'suggestion': tips[0],
+        })
+
+    overview.sort(key=lambda entry: entry.get('priorityScore', 0), reverse=True)
+    return jsonify({
+        'generated': datetime.datetime.now().isoformat(),
+        'tasks': overview,
+    })
 
 # Analyze user list (simple: count tasks, avg time)
 @app.route('/analyze_list')
@@ -262,8 +587,72 @@ def submit_feedback():
     if extra_time > 0:
         # Adjust slots (simplified: add extra days)
         c.execute("UPDATE tasks SET days_req = days_req + ? WHERE id=?", (extra_time // 24, task_id))  # Assuming hours
+        c.execute(
+            "UPDATE tasks SET estimated_minutes = estimated_minutes + ? WHERE id=?",
+            (extra_time * 60, task_id),
+        )
+        record_task_activity(task_id, status='at_risk')
+    else:
+        record_task_activity(task_id)
     conn.commit()
     return jsonify({'status': 'submitted'})
+
+
+@app.route('/log_session', methods=['POST'])
+def log_session():
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get('task_id')
+    if not task_id:
+        return jsonify({'error': 'task_id is required'}), 400
+
+    user_id = session.get('user_id', 'default')
+    start_raw = payload.get('start')
+    end_raw = payload.get('end')
+    duration = payload.get('duration_minutes')
+    intensity = payload.get('intensity')
+    notes = payload.get('notes')
+
+    try:
+        start_at = parse(start_raw) if start_raw else None
+    except (ValueError, TypeError):
+        start_at = None
+
+    try:
+        end_at = parse(end_raw) if end_raw else None
+    except (ValueError, TypeError):
+        end_at = None
+
+    if duration is None and start_at and end_at:
+        duration = int(max((end_at - start_at).total_seconds() / 60, 0))
+    else:
+        try:
+            duration = int(duration)
+        except (TypeError, ValueError):
+            duration = 0
+
+    duration = max(duration or 0, 0)
+
+    c.execute(
+        """
+        INSERT INTO task_sessions (task_id, started_at, ended_at, duration_minutes, intensity, notes, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            task_id,
+            start_at.isoformat() if start_at else None,
+            end_at.isoformat() if end_at else None,
+            duration,
+            intensity,
+            notes,
+            user_id,
+        ),
+    )
+
+    status_override = payload.get('status')
+    record_task_activity(task_id, minutes=duration, status=status_override)
+    conn.commit()
+
+    return jsonify({'status': 'logged', 'duration_minutes': duration})
 
 
 @app.route('/ai_insights', methods=['POST'])
@@ -308,7 +697,7 @@ def ai_insights():
 
     suggestion = "Stay focused and revisit your top priority task for a quick win today."
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         response = model.generate_content(prompt)
         if response and getattr(response, 'text', None):
             candidate = response.text.strip()
@@ -324,9 +713,13 @@ def ai_insights():
 def complete_task():
     data = request.json
     task_id = data['task_id']
-    c.execute("UPDATE tasks SET completed=1 WHERE id=?", (task_id,))
+    c.execute(
+        "UPDATE tasks SET completed=1, status='completed', priority_score=0 WHERE id=?",
+        (task_id,),
+    )
     # Remove remaining slots
     c.execute("DELETE FROM schedules WHERE task_id=?", (task_id,))
+    record_task_activity(task_id, status='completed')
     conn.commit()
     # Adjust if faster: but handled in feedback
     return jsonify({'status': 'completed'})

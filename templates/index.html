@@ -66,7 +66,7 @@
         color: white;
         margin-bottom: 30px;
         position: relative;
-  padding-top: 40px;
+        padding-top: 40px;
       }
 
       .header-actions {
@@ -84,6 +84,33 @@
         border-width: 1px;
         min-width: 180px;
         justify-content: center;
+      }
+
+      .header-button {
+        background: #f7fafc;
+        border: 2px solid #e2e8f0;
+        color: #2d3748;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .header-button:hover {
+        background: #e2e8f0;
+      }
+
+      .header-button.notification-active {
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        border-color: #2f855a;
+        color: #ffffff;
+      }
+
+      .header-button.notification-blocked {
+        background: #fed7d7;
+        border-color: #fc8181;
+        color: #c53030;
       }
 
       .header .logo {
@@ -759,7 +786,12 @@
           <button class="google-btn header-google-btn" id="googleAuthButton">
             Connect Google Calendar
           </button>
-          <button onclick="requestNotificationPermission()">
+          <button
+            type="button"
+            class="header-button"
+            id="notificationPermissionButton"
+            onclick="requestNotificationPermission()"
+          >
             Enable Notifications
           </button>
         </div>
@@ -1047,6 +1079,7 @@
         updateStats();
         startNotificationChecker();
         generateAISuggestions();
+  syncNotificationButton();
 
         fetch("/check_auth")
           .then((r) => r.json())
@@ -2361,9 +2394,7 @@
             return false;
           }
           const startTime = new Date(item.start);
-          return (
-            startTime >= startOfYesterday && startTime <= endOfYesterday
-          );
+          return startTime >= startOfYesterday && startTime <= endOfYesterday;
         });
 
         if (missed.length > 0) {
@@ -2372,9 +2403,7 @@
               ? `You missed "${missed[0].taskName}" yesterday. Consider rescheduling it.`
               : `You missed ${missed.length} focus blocks yesterday. Review and reschedule them.`;
           showNotification(
-            missed.length === 1
-              ? "Missed Focus Block"
-              : "Missed Focus Blocks",
+            missed.length === 1 ? "Missed Focus Block" : "Missed Focus Blocks",
             message
           );
         }
@@ -2534,10 +2563,81 @@
       //   // Notification.requestPermission();
       // }
 
+      function syncNotificationButton() {
+        const button = document.getElementById(
+          "notificationPermissionButton"
+        );
+        if (!button) return;
+
+        if (!("Notification" in window)) {
+          button.textContent = "Notifications Unavailable";
+          button.classList.remove(
+            "notification-active",
+            "notification-blocked"
+          );
+          button.classList.add("notification-blocked");
+          button.disabled = true;
+          button.title = "Your browser does not support notifications.";
+          return;
+        }
+
+        button.disabled = false;
+        button.classList.remove(
+          "notification-active",
+          "notification-blocked"
+        );
+
+        const permission = Notification.permission;
+        if (permission === "granted") {
+          button.textContent = "Notifications Enabled";
+          button.classList.add("notification-active");
+          button.title =
+            "Notifications are enabled. Click if you need to re-check settings.";
+        } else if (permission === "denied") {
+          button.textContent = "Notifications Blocked";
+          button.classList.add("notification-blocked");
+          button.title =
+            "Notifications are blocked. Update your browser settings, then click to try again.";
+        } else {
+          button.textContent = "Enable Notifications";
+          button.title =
+            "Allow browser notifications to receive focus reminders.";
+        }
+      }
+
       function requestNotificationPermission() {
-        Notification.requestPermission().then((perm) => {
-          if (perm === "granted") alert("Notifications enabled!");
-        });
+        if (!("Notification" in window)) {
+          alert("Your browser does not support notifications.");
+          syncNotificationButton();
+          return;
+        }
+
+        if (Notification.permission === "granted") {
+          alert("Notifications are already enabled.");
+          syncNotificationButton();
+          return;
+        }
+
+        Notification.requestPermission()
+          .then((permission) => {
+            if (permission === "granted") {
+              alert(
+                "Notifications enabled! We'll nudge you when new focus blocks start."
+              );
+            } else if (permission === "denied") {
+              alert(
+                "Notifications remain blocked. Please enable them in your browser settings."
+              );
+            }
+            syncNotificationButton();
+          })
+          .catch((error) => {
+            console.error("Notification permission request failed:", error);
+            alert(
+              "We couldn't update your notification settings. Please try again later."
+            );
+            syncNotificationButton();
+          });
       }
 
       document.addEventListener("DOMContentLoaded", () => {
@@ -2545,6 +2645,14 @@
         window.domReady = true;
         if (window.gapiLoaded) {
           init();
+        }
+        syncNotificationButton();
+      });
+
+      window.addEventListener("focus", syncNotificationButton);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          syncNotificationButton();
         }
       });
 
