@@ -1,0 +1,7 @@
+Flask==3.0.3
+google-api-python-client==2.125.0
+google-auth==2.33.0
+google-auth-oauthlib==1.2.1
+google-generativeai==0.7.2
+python-dateutil==2.9.0.post0
+gunicorn==22.0.0
