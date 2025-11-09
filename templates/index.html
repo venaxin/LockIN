@@ -69,15 +69,6 @@
         padding-top: 40px;
       }
 
-      .header-actions {
-        position: absolute;
-        top: 0;
-        right: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
       .header-productivity {
         position: absolute;
         top: 0;
@@ -85,6 +76,21 @@
         display: flex;
         flex-direction: column;
         align-items: flex-start;
+      }
+
+      .calendar-header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .calendar-google-btn {
+        padding: 8px 18px;
+        font-size: 0.9em;
+        border-width: 2px;
+        min-width: 180px;
+        justify-content: center;
       }
 
       .productivity-meter {
@@ -220,41 +226,6 @@
         background: #a0aec0;
       }
 
-      .header-actions .header-google-btn {
-        padding: 8px 16px;
-        font-size: 0.9em;
-        border-width: 1px;
-        min-width: 180px;
-        justify-content: center;
-      }
-
-      .header-button {
-        background: #f7fafc;
-        border: 2px solid #e2e8f0;
-        color: #2d3748;
-        padding: 8px 16px;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .header-button:hover {
-        background: #e2e8f0;
-      }
-
-      .header-button.notification-active {
-        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-        border-color: #2f855a;
-        color: #ffffff;
-      }
-
-      .header-button.notification-blocked {
-        background: #fed7d7;
-        border-color: #fc8181;
-        color: #c53030;
-      }
-
       .header .logo {
         max-width: 200px;
         width: 100%;
@@ -293,6 +264,113 @@
 
       .add-task-form {
         margin-bottom: 30px;
+      }
+
+      .floating-task-entry {
+        position: fixed;
+        bottom: 24px;
+        left: 24px;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .floating-task-button {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: none;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #ffffff;
+        font-size: 34px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 14px 30px rgba(76, 81, 191, 0.35);
+        cursor: pointer;
+        transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .floating-task-button:hover {
+        transform: translateY(-3px) scale(1.03);
+        box-shadow: 0 18px 38px rgba(76, 81, 191, 0.45);
+      }
+
+      .floating-task-entry.open .floating-task-button {
+        opacity: 0;
+        transform: scale(0.7);
+        pointer-events: none;
+        box-shadow: none;
+      }
+
+      .floating-task-panel {
+        width: 320px;
+        max-width: 90vw;
+        background: #ffffff;
+        border-radius: 18px;
+        border: 2px solid #e2e8f0;
+        box-shadow: 0 25px 45px rgba(15, 23, 42, 0.25);
+        padding: 22px 20px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+        transform: translateY(12px) scale(0.97);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+
+      .floating-task-entry.open .floating-task-panel {
+        opacity: 1;
+        pointer-events: auto;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+      }
+
+      .floating-task-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+
+      .floating-task-header h3 {
+        color: #2d3748;
+        font-size: 1.1em;
+        font-weight: 700;
+      }
+
+      .floating-task-close {
+        background: none;
+        border: none;
+        color: #4a5568;
+        font-size: 1.6em;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .floating-task-close:hover {
+        color: #2d3748;
+      }
+
+      .floating-task-form {
+        width: 100%;
+      }
+
+      .floating-task-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .floating-task-actions .btn {
+        width: auto;
+        flex: 1;
       }
 
       .form-group {
@@ -959,6 +1037,10 @@
         position: relative;
       }
 
+      .modal-content.notification-permission-modal {
+        max-width: 380px;
+      }
+
       .modal-close {
         position: absolute;
         top: 12px;
@@ -1031,6 +1113,14 @@
         box-shadow: 0 10px 20px rgba(102, 126, 234, 0.18);
       }
 
+      .modal-actions button.disabled,
+      .modal-actions button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+        box-shadow: none;
+        transform: none;
+      }
+
       .modal-actions .primary {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: #ffffff;
@@ -1075,14 +1165,29 @@
           text-align: center;
         }
 
-        .header-actions {
-          position: static;
-          justify-content: flex-end;
-          margin-bottom: 10px;
-        }
-
         .modal-meta {
           grid-template-columns: 1fr;
+        }
+
+        .calendar-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .calendar-header-left {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        .calendar-nav {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        .calendar-google-btn {
+          width: 100%;
+          min-width: 0;
         }
       }
     </style>
@@ -1116,19 +1221,6 @@
             </div>
           </div>
         </div>
-        <div class="header-actions">
-          <button class="google-btn header-google-btn" id="googleAuthButton">
-            Connect Google Calendar
-          </button>
-          <button
-            type="button"
-            class="header-button"
-            id="notificationPermissionButton"
-            onclick="requestNotificationPermission()"
-          >
-            Enable Notifications
-          </button>
-        </div>
         <img
           src="{{ url_for('static', filename='images/LockIN-logo-noBG.png') }}"
           class="logo"
@@ -1139,37 +1231,6 @@
 
       <div class="main-grid">
         <div class="sidebar">
-          <div class="add-task-form">
-            <h2 style="color: #2d3748; margin-bottom: 20px">Add New Task</h2>
-            <div class="form-group">
-              <label for="taskName">Task Name</label>
-              <input
-                type="text"
-                id="taskName"
-                placeholder="e.g., Complete project proposal"
-              />
-            </div>
-            <div class="form-group">
-              <label for="deadline">Deadline</label>
-              <input type="datetime-local" id="deadline" />
-            </div>
-            <div class="form-group">
-              <label for="daysRequired">Days Required</label>
-              <input type="number" id="daysRequired" min="1" value="1" />
-            </div>
-            <div class="form-group">
-              <label for="dailyHours">Daily Hours</label>
-              <input
-                type="number"
-                id="dailyHours"
-                min="0.5"
-                step="0.5"
-                value="2"
-              />
-            </div>
-            <button class="btn" onclick="addTask()">Add Task</button>
-          </div>
-
           <div class="ai-suggestions" id="aiSuggestions">
             <h3>🤖 AI Suggestions</h3>
             <div id="suggestionsList"></div>
@@ -1183,7 +1244,16 @@
 
         <div class="calendar-section">
           <div class="calendar-header">
-            <h2 style="color: #2d3748">Week View</h2>
+            <div class="calendar-header-left">
+              <h2 style="color: #2d3748">Week View</h2>
+              <button
+                class="google-btn calendar-google-btn"
+                id="googleAuthButton"
+                type="button"
+              >
+                Connect Google Calendar
+              </button>
+            </div>
             <div class="calendar-nav">
               <button
                 class="nav-btn"
@@ -1223,6 +1293,120 @@
             <div class="stat-value" id="completionRate">0%</div>
             <div class="stat-label">Completion Rate</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="floating-task-entry" id="floatingTaskEntry">
+      <button
+        type="button"
+        class="floating-task-button"
+        id="floatingTaskButton"
+        aria-label="Add new task"
+        aria-expanded="false"
+        aria-controls="floatingTaskPanel"
+      >
+        +
+      </button>
+      <div
+        class="floating-task-panel"
+        id="floatingTaskPanel"
+        role="dialog"
+        aria-labelledby="floatingTaskTitle"
+        aria-hidden="true"
+      >
+        <div class="floating-task-header">
+          <h3 id="floatingTaskTitle">Add New Task</h3>
+          <button
+            type="button"
+            class="floating-task-close"
+            id="floatingTaskCloseBtn"
+            aria-label="Close add task form"
+          >
+            &times;
+          </button>
+        </div>
+        <form
+          class="floating-task-form"
+          id="floatingTaskForm"
+          onsubmit="submitFloatingTaskForm(event)"
+        >
+          <div class="form-group">
+            <label for="taskName">Task Name</label>
+            <input
+              type="text"
+              id="taskName"
+              placeholder="e.g., Complete project proposal"
+            />
+          </div>
+          <div class="form-group">
+            <label for="deadline">Deadline</label>
+            <input type="datetime-local" id="deadline" />
+          </div>
+          <div class="form-group">
+            <label for="daysRequired">Days Required</label>
+            <input type="number" id="daysRequired" min="1" value="1" />
+          </div>
+          <div class="form-group">
+            <label for="dailyHours">Daily Hours</label>
+            <input
+              type="number"
+              id="dailyHours"
+              min="0.5"
+              step="0.5"
+              value="2"
+            />
+          </div>
+          <div class="floating-task-actions">
+            <button class="btn" type="submit">Add Task</button>
+            <button
+              class="btn btn-secondary"
+              type="button"
+              id="floatingTaskCancel"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      class="modal-overlay"
+      id="notificationPermissionModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="notificationModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-content notification-permission-modal">
+        <button
+          class="modal-close"
+          type="button"
+          id="notificationModalClose"
+          aria-label="Close notification permission prompt"
+        >
+          &times;
+        </button>
+        <h3
+          id="notificationModalTitle"
+          style="color: #2d3748; font-size: 1.25em; margin-bottom: 12px"
+        >
+          Stay on Track
+        </h3>
+        <p
+          id="notificationModalMessage"
+          style="color: #4a5568; line-height: 1.5; margin-bottom: 20px"
+        >
+          Enable notifications so we can nudge you when focus blocks begin.
+        </p>
+        <div class="modal-actions">
+          <button class="primary" type="button" id="notificationModalEnable">
+            Enable Notifications
+          </button>
+          <button class="secondary" type="button" id="notificationModalDismiss">
+            Maybe Later
+          </button>
         </div>
       </div>
     </div>
@@ -1476,6 +1660,9 @@
       let calendarScrollInitialized = false;
       let userAdjustedCalendarScroll = false;
       let draggedScheduleId = null;
+      let floatingTaskEntryInitialized = false;
+      let notificationModalInitialized = false;
+      let previousFocusBeforeNotificationModal = null;
 
       function setGoogleCalendarExpanded(expand, persist = true) {
         const toggle = document.getElementById("googleCalToggle");
@@ -1550,6 +1737,8 @@
       // Initialize the app
       function init() {
         setDefaultDeadline();
+        setupFloatingTaskEntry();
+        setupNotificationPermissionModal();
         setupGoogleCalendarToggle();
         const prevWeekBtn = document.getElementById("prevWeekBtn");
         const nextWeekBtn = document.getElementById("nextWeekBtn");
@@ -1564,6 +1753,7 @@
         startNotificationChecker();
         generateAISuggestions();
         syncNotificationButton();
+        checkNotificationPermissionOnLoad();
 
         fetch("/check_auth")
           .then((r) => r.json())
@@ -1614,6 +1804,244 @@
           .slice(0, 16);
       }
 
+      function setupFloatingTaskEntry() {
+        if (floatingTaskEntryInitialized) {
+          return;
+        }
+
+        const entry = document.getElementById("floatingTaskEntry");
+        const toggleButton = document.getElementById("floatingTaskButton");
+        const closeButton = document.getElementById("floatingTaskCloseBtn");
+        const cancelButton = document.getElementById("floatingTaskCancel");
+
+        if (!entry || !toggleButton) {
+          return;
+        }
+
+        floatingTaskEntryInitialized = true;
+
+        toggleButton.addEventListener("click", () => {
+          const shouldOpen = !entry.classList.contains("open");
+          toggleFloatingTaskForm(shouldOpen);
+        });
+
+        if (closeButton) {
+          closeButton.addEventListener("click", () => closeFloatingTaskForm());
+        }
+
+        if (cancelButton) {
+          cancelButton.addEventListener("click", () => closeFloatingTaskForm());
+        }
+
+        entry.addEventListener("click", (event) => {
+          event.stopPropagation();
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!entry.classList.contains("open")) {
+            return;
+          }
+
+          if (!entry.contains(event.target)) {
+            closeFloatingTaskForm();
+          }
+        });
+      }
+
+      function setupNotificationPermissionModal() {
+        if (notificationModalInitialized) {
+          return;
+        }
+
+        const modal = document.getElementById("notificationPermissionModal");
+        if (!modal) {
+          return;
+        }
+
+        const enableBtn = document.getElementById("notificationModalEnable");
+        const dismissBtn = document.getElementById("notificationModalDismiss");
+        const closeBtn = document.getElementById("notificationModalClose");
+
+        notificationModalInitialized = true;
+
+        if (enableBtn) {
+          enableBtn.addEventListener("click", () =>
+            requestNotificationPermission("modal")
+          );
+        }
+
+        const handleDismiss = () => {
+          hideNotificationPermissionModal();
+        };
+
+        if (dismissBtn) {
+          dismissBtn.addEventListener("click", handleDismiss);
+        }
+
+        if (closeBtn) {
+          closeBtn.addEventListener("click", handleDismiss);
+        }
+
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) {
+            hideNotificationPermissionModal();
+          }
+        });
+
+        updateNotificationModalContent();
+      }
+
+      function showNotificationPermissionModal() {
+        const modal = document.getElementById("notificationPermissionModal");
+        if (!modal) {
+          return;
+        }
+        const activeElement = document.activeElement;
+        if (activeElement instanceof HTMLElement && activeElement !== modal) {
+          previousFocusBeforeNotificationModal = activeElement;
+        } else {
+          previousFocusBeforeNotificationModal = null;
+        }
+        updateNotificationModalContent();
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+        requestAnimationFrame(() => {
+          const enableBtn = document.getElementById("notificationModalEnable");
+          if (enableBtn && !enableBtn.disabled) {
+            enableBtn.focus();
+          } else {
+            const dismissBtn = document.getElementById(
+              "notificationModalDismiss"
+            );
+            if (dismissBtn) {
+              dismissBtn.focus();
+            }
+          }
+        });
+      }
+
+      function hideNotificationPermissionModal() {
+        const modal = document.getElementById("notificationPermissionModal");
+        if (!modal) {
+          return;
+        }
+        modal.classList.remove("show");
+        modal.setAttribute("aria-hidden", "true");
+        if (
+          previousFocusBeforeNotificationModal instanceof HTMLElement &&
+          document.body.contains(previousFocusBeforeNotificationModal)
+        ) {
+          try {
+            previousFocusBeforeNotificationModal.focus({ preventScroll: true });
+          } catch (error) {
+            previousFocusBeforeNotificationModal.focus();
+          }
+        }
+        previousFocusBeforeNotificationModal = null;
+      }
+
+      function updateNotificationModalContent() {
+        const messageNode = document.getElementById("notificationModalMessage");
+        const enableBtn = document.getElementById("notificationModalEnable");
+        if (!messageNode || !enableBtn) {
+          return;
+        }
+
+        if (!("Notification" in window)) {
+          messageNode.textContent =
+            "Your browser does not support notifications, but you can still stay productive here.";
+          enableBtn.disabled = true;
+          enableBtn.textContent = "Unavailable";
+          enableBtn.classList.add("disabled");
+          enableBtn.setAttribute("aria-disabled", "true");
+          return;
+        }
+
+        enableBtn.disabled = false;
+        enableBtn.textContent = "Enable Notifications";
+        enableBtn.classList.remove("disabled");
+        enableBtn.removeAttribute("aria-disabled");
+
+        const permission = Notification.permission;
+        if (permission === "denied") {
+          messageNode.textContent =
+            "Notifications are blocked in your browser settings. Enable them to receive timely reminders.";
+          enableBtn.disabled = true;
+          enableBtn.textContent = "Notifications Blocked";
+          enableBtn.classList.add("disabled");
+          enableBtn.setAttribute("aria-disabled", "true");
+        } else {
+          messageNode.textContent =
+            "Enable notifications so we can nudge you when focus blocks begin.";
+        }
+      }
+
+      function checkNotificationPermissionOnLoad() {
+        if (!("Notification" in window)) {
+          return;
+        }
+
+        if (Notification.permission === "granted") {
+          hideNotificationPermissionModal();
+          return;
+        }
+
+        showNotificationPermissionModal();
+      }
+
+      function toggleFloatingTaskForm(shouldOpen) {
+        const entry = document.getElementById("floatingTaskEntry");
+        const toggleButton = document.getElementById("floatingTaskButton");
+        const panel = document.getElementById("floatingTaskPanel");
+
+        if (!entry || !toggleButton || !panel) {
+          return;
+        }
+
+        if (shouldOpen) {
+          entry.classList.add("open");
+          toggleButton.setAttribute("aria-expanded", "true");
+          panel.setAttribute("aria-hidden", "false");
+          requestAnimationFrame(() => {
+            const taskNameInput = document.getElementById("taskName");
+            if (taskNameInput) {
+              taskNameInput.focus();
+              taskNameInput.select();
+            }
+          });
+        } else {
+          entry.classList.remove("open");
+          toggleButton.setAttribute("aria-expanded", "false");
+          panel.setAttribute("aria-hidden", "true");
+          if (typeof toggleButton.focus === "function") {
+            try {
+              toggleButton.focus({ preventScroll: true });
+            } catch (error) {
+              toggleButton.focus();
+            }
+          }
+        }
+      }
+
+      function openFloatingTaskForm() {
+        toggleFloatingTaskForm(true);
+      }
+
+      function closeFloatingTaskForm() {
+        toggleFloatingTaskForm(false);
+      }
+
+      function submitFloatingTaskForm(event) {
+        if (event) {
+          event.preventDefault();
+        }
+
+        const taskCreated = addTask();
+        if (taskCreated) {
+          closeFloatingTaskForm();
+        }
+      }
+
       // Add a new task
       function addTask() {
         const name = document.getElementById("taskName").value;
@@ -1627,7 +2055,7 @@
 
         if (!name || !deadline) {
           alert("Please fill in task name and deadline");
-          return;
+          return false;
         }
 
         const task = {
@@ -1663,6 +2091,8 @@
         generateAISuggestions();
 
         updateStats();
+
+        return true;
       }
 
       // Calculate task priority based on deadline and time required
@@ -2703,7 +3133,7 @@
 
         if (authButton) {
           if (googleAccountAuthenticated) {
-            authButton.textContent = "Logout Google";
+            authButton.textContent = "Disconnect Google Calendar";
             authButton.onclick = logoutGoogle;
           } else {
             authButton.textContent = "Connect Google Calendar";
@@ -2952,6 +3382,19 @@
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
           closeEventModal();
+          const entry = document.getElementById("floatingTaskEntry");
+          if (entry && entry.classList.contains("open")) {
+            closeFloatingTaskForm();
+          }
+          const notificationModal = document.getElementById(
+            "notificationPermissionModal"
+          );
+          if (
+            notificationModal &&
+            notificationModal.classList.contains("show")
+          ) {
+            hideNotificationPermissionModal();
+          }
         }
       });
 
@@ -3733,51 +4176,30 @@
       // }
 
       function syncNotificationButton() {
-        const button = document.getElementById("notificationPermissionButton");
-        if (!button) return;
+        updateNotificationModalContent();
 
-        if (!("Notification" in window)) {
-          button.textContent = "Notifications Unavailable";
-          button.classList.remove(
-            "notification-active",
-            "notification-blocked"
-          );
-          button.classList.add("notification-blocked");
-          button.disabled = true;
-          button.title = "Your browser does not support notifications.";
-          return;
-        }
-
-        button.disabled = false;
-        button.classList.remove("notification-active", "notification-blocked");
-
-        const permission = Notification.permission;
-        if (permission === "granted") {
-          button.textContent = "Notifications Enabled";
-          button.classList.add("notification-active");
-          button.title =
-            "Notifications are enabled. Click if you need to re-check settings.";
-        } else if (permission === "denied") {
-          button.textContent = "Notifications Blocked";
-          button.classList.add("notification-blocked");
-          button.title =
-            "Notifications are blocked. Update your browser settings, then click to try again.";
-        } else {
-          button.textContent = "Enable Notifications";
-          button.title =
-            "Allow browser notifications to receive focus reminders.";
+        if ("Notification" in window && Notification.permission === "granted") {
+          hideNotificationPermissionModal();
         }
       }
 
-      function requestNotificationPermission() {
+      function requestNotificationPermission(source = "ui") {
+        const fromModal = source === "modal";
+
         if (!("Notification" in window)) {
-          alert("Your browser does not support notifications.");
+          if (!fromModal) {
+            alert("Your browser does not support notifications.");
+          }
+          hideNotificationPermissionModal();
           syncNotificationButton();
           return;
         }
 
         if (Notification.permission === "granted") {
-          alert("Notifications are already enabled.");
+          if (!fromModal) {
+            alert("Notifications are already enabled.");
+          }
+          hideNotificationPermissionModal();
           syncNotificationButton();
           return;
         }
@@ -3785,10 +4207,13 @@
         Notification.requestPermission()
           .then((permission) => {
             if (permission === "granted") {
-              alert(
-                "Notifications enabled! We'll nudge you when new focus blocks start."
-              );
-            } else if (permission === "denied") {
+              if (!fromModal) {
+                alert(
+                  "Notifications enabled! We'll nudge you when new focus blocks start."
+                );
+              }
+              hideNotificationPermissionModal();
+            } else if (permission === "denied" && !fromModal) {
               alert(
                 "Notifications remain blocked. Please enable them in your browser settings."
               );
@@ -3797,9 +4222,11 @@
           })
           .catch((error) => {
             console.error("Notification permission request failed:", error);
-            alert(
-              "We couldn't update your notification settings. Please try again later."
-            );
+            if (!fromModal) {
+              alert(
+                "We couldn't update your notification settings. Please try again later."
+              );
+            }
             syncNotificationButton();
           });
       }
