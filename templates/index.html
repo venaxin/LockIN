@@ -383,6 +383,15 @@
         transform: scale(1.02);
       }
 
+      .scheduled-task[data-draggable="true"] {
+        cursor: grab;
+      }
+
+      .scheduled-task.dragging {
+        opacity: 0.85;
+        cursor: grabbing;
+      }
+
       .scheduled-task.in-progress {
         background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
       }
@@ -403,6 +412,11 @@
       .scheduled-task .event-time {
         font-size: 11px;
         opacity: 0.85;
+      }
+
+      .day-column-body.drag-over {
+        outline: 2px dashed #0bc5ea;
+        outline-offset: -4px;
       }
 
       .deadline-flag {
@@ -1076,6 +1090,26 @@
       </div>
     </div>
 
+    <div
+      class="modal-overlay"
+      id="errorModal"
+      onclick="handleErrorModalOverlayClick(event)"
+    >
+      <div class="modal-content">
+        <button class="modal-close" onclick="closeErrorModal()">&times;</button>
+        <h3 style="color: #2d3748; font-size: 1.3em; margin-bottom: 12px">
+          Placement Blocked
+        </h3>
+        <p
+          id="errorModalMessage"
+          style="color: #4a5568; line-height: 1.4; margin-bottom: 20px"
+        ></p>
+        <div class="modal-actions">
+          <button class="primary" onclick="closeErrorModal()">Got it</button>
+        </div>
+      </div>
+    </div>
+
     <div class="pomodoro-timer" id="pomodoroTimer" style="display: none">
       <div class="timer-display" id="timerDisplay">25:00</div>
       <div class="timer-label" id="timerLabel">Focus Time</div>
@@ -1177,6 +1211,14 @@
       let pomodoroPaused = false;
       let stats = loadStorage("stats", DEFAULT_STATS);
 
+      const FOCUS_SLOT_MINUTES = 30;
+      const FOCUS_SLOT_MS = FOCUS_SLOT_MINUTES * 60 * 1000;
+      const PREFERRED_TIME_WINDOWS = [
+        { startHour: 9, endHour: 11, productivity: 1.2 },
+        { startHour: 14, endHour: 16, productivity: 1.0 },
+        { startHour: 19, endHour: 21, productivity: 0.8 },
+      ];
+
       // Google Calendar API configuration
       const GOOGLE_CLIENT_ID = "{{ google_client_id or '' }}";
       const GOOGLE_API_KEY = "{{ calendar_api_key or '' }}";
@@ -1189,6 +1231,7 @@
       let currentWeekStart = getStartOfWeek(new Date());
       let calendarScrollInitialized = false;
       let userAdjustedCalendarScroll = false;
+      let draggedScheduleId = null;
 
       function setGoogleCalendarExpanded(expand, persist = true) {
         const toggle = document.getElementById("googleCalToggle");
@@ -1386,6 +1429,196 @@
         return Math.min(10, Math.max(1, Math.round(urgency * 10)));
       }
 
+      function roundToNextSlot(date) {
+        const next = new Date(date);
+        next.setSeconds(0, 0);
+        const minutes = next.getMinutes();
+        const remainder = minutes % FOCUS_SLOT_MINUTES;
+        if (remainder !== 0) {
+          next.setMinutes(minutes + (FOCUS_SLOT_MINUTES - remainder));
+        }
+        return next;
+      }
+
+      function isWeekend(date) {
+        const day = date.getDay();
+        return day === 0 || day === 6;
+      }
+
+      function moveToNextWeekdayMorning(date) {
+        const next = new Date(date);
+        next.setDate(next.getDate() + 1);
+        next.setHours(PREFERRED_TIME_WINDOWS[0].startHour, 0, 0, 0);
+        while (isWeekend(next)) {
+          next.setDate(next.getDate() + 1);
+        }
+        return next;
+      }
+
+      function getPreferredWindow(date) {
+        const hour = date.getHours();
+        return PREFERRED_TIME_WINDOWS.find(
+          (window) => hour >= window.startHour && hour < window.endHour
+        );
+      }
+
+      function advanceToNextPreferredStart(date) {
+        let candidate = new Date(date);
+        candidate.setSeconds(0, 0);
+        const hour = candidate.getHours();
+        const upcoming = PREFERRED_TIME_WINDOWS.find(
+          (window) => window.startHour > hour
+        );
+        if (upcoming) {
+          candidate.setHours(upcoming.startHour, 0, 0, 0);
+        } else {
+          candidate = moveToNextWeekdayMorning(candidate);
+        }
+        return candidate;
+      }
+
+      function sortScheduleEntries() {
+        schedule.sort(
+          (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+        );
+      }
+
+      function findScheduleConflict(startDate, endDate, ignoreId = null) {
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+        return schedule.find((entry) => {
+          if (!entry || entry.type === "deadline") {
+            return false;
+          }
+          if (ignoreId && String(entry.id) === String(ignoreId)) {
+            return false;
+          }
+          const entryStart = entry.start ? new Date(entry.start) : null;
+          const entryEnd = entry.end
+            ? new Date(entry.end)
+            : entryStart
+            ? new Date(entryStart.getTime() + FOCUS_SLOT_MS)
+            : null;
+          if (!entryStart || !entryEnd) {
+            return false;
+          }
+          return entryEnd.getTime() > startMs && entryStart.getTime() < endMs;
+        });
+      }
+
+      function hasScheduleConflict(startDate, endDate, ignoreId = null) {
+        return Boolean(findScheduleConflict(startDate, endDate, ignoreId));
+      }
+
+      function resolveFocusConflicts({ save = false } = {}) {
+        let changed = false;
+        const movableEntries = schedule
+          .filter(
+            (item) =>
+              item &&
+              item.type !== "deadline" &&
+              item.source !== "google" &&
+              item.type !== "external"
+          )
+          .sort(
+            (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+          );
+
+        movableEntries.forEach((item) => {
+          if (!item.start) {
+            return;
+          }
+
+          let startDate = new Date(item.start);
+          if (Number.isNaN(startDate.getTime())) {
+            return;
+          }
+          let endDate = item.end
+            ? new Date(item.end)
+            : new Date(startDate.getTime() + FOCUS_SLOT_MS);
+
+          let conflict = findScheduleConflict(startDate, endDate, item.id);
+          if (!conflict) {
+            return;
+          }
+
+          const associatedTask = tasks.find(
+            (task) => String(task.id) === String(item.taskId)
+          );
+
+          let searchLimit = null;
+          if (associatedTask && associatedTask.deadline) {
+            const deadlineCandidate = new Date(associatedTask.deadline);
+            if (!Number.isNaN(deadlineCandidate.getTime())) {
+              searchLimit = new Date(deadlineCandidate);
+              searchLimit.setHours(23, 59, 59, 999);
+            }
+          }
+
+          let candidate = roundToNextSlot(
+            conflict.end ? new Date(conflict.end) : new Date(endDate)
+          );
+
+          let attempts = 0;
+          const maxAttempts = 4000;
+          const globalLimit = new Date(startDate);
+          globalLimit.setDate(globalLimit.getDate() + 60);
+
+          while (attempts < maxAttempts && candidate < globalLimit) {
+            attempts++;
+
+            if (isWeekend(candidate)) {
+              candidate = moveToNextWeekdayMorning(candidate);
+              continue;
+            }
+
+            const window = getPreferredWindow(candidate);
+            if (!window) {
+              candidate = advanceToNextPreferredStart(candidate);
+              continue;
+            }
+
+            const candidateEnd = new Date(candidate.getTime() + FOCUS_SLOT_MS);
+
+            if (searchLimit && candidateEnd.getTime() > searchLimit.getTime()) {
+              candidate = moveToNextWeekdayMorning(candidate);
+              searchLimit = null;
+              continue;
+            }
+
+            const blocker = findScheduleConflict(
+              candidate,
+              candidateEnd,
+              item.id
+            );
+
+            if (!blocker) {
+              item.start = candidate.toISOString();
+              item.end = candidateEnd.toISOString();
+              if (window.productivity) {
+                item.productivity = window.productivity;
+              }
+              changed = true;
+              break;
+            }
+
+            const nextBase = blocker.end ? new Date(blocker.end) : candidateEnd;
+            candidate = roundToNextSlot(nextBase);
+          }
+        });
+
+        if (changed) {
+          sortScheduleEntries();
+        }
+
+        if (changed && save) {
+          saveSchedule({ enforce: false });
+          renderCalendar();
+        }
+
+        return changed;
+      }
+
       // AI-powered schedule generation
       function generateSchedule(task) {
         const now = new Date();
@@ -1406,76 +1639,76 @@
           return false;
         });
 
-        let currentDate = new Date(now);
-        currentDate.setHours(currentDate.getHours() + 1);
-        currentDate.setMinutes(0);
-
-        const preferredTimes = [
-          { start: 9, end: 11, productivity: 1.2 }, // Morning focus
-          { start: 14, end: 16, productivity: 1.0 }, // Afternoon
-          { start: 19, end: 21, productivity: 0.8 }, // Evening
-        ];
+        let currentDate = new Date(now.getTime() + 60 * 60 * 1000);
+        currentDate = roundToNextSlot(currentDate);
 
         let sessionsScheduled = 0;
+        let safetyCounter = 0;
+        const maxIterations = 4000;
 
-        while (sessionsScheduled < sessions && currentDate < deadline) {
-          const hour = currentDate.getHours();
-          const dayOfWeek = currentDate.getDay();
+        while (
+          sessionsScheduled < sessions &&
+          currentDate < deadline &&
+          safetyCounter < maxIterations
+        ) {
+          safetyCounter++;
 
-          // Skip weekends for work tasks (configurable)
-          if (dayOfWeek === 0 || dayOfWeek === 6) {
-            currentDate.setDate(currentDate.getDate() + 1);
-            currentDate.setHours(9, 0, 0, 0);
+          if (isWeekend(currentDate)) {
+            currentDate = moveToNextWeekdayMorning(currentDate);
             continue;
           }
 
-          // Find if current hour is in preferred time
-          const timeSlot = preferredTimes.find(
-            (t) => hour >= t.start && hour < t.end
+          const window = getPreferredWindow(currentDate);
+          if (!window) {
+            currentDate = advanceToNextPreferredStart(currentDate);
+            continue;
+          }
+
+          const proposedStart = new Date(currentDate);
+          const proposedEnd = new Date(proposedStart.getTime() + FOCUS_SLOT_MS);
+
+          if (proposedEnd > deadline) {
+            break;
+          }
+
+          const duplicate = schedule.some(
+            (entry) =>
+              String(entry.taskId) === String(task.id) &&
+              entry.start === proposedStart.toISOString() &&
+              entry.end === proposedEnd.toISOString()
           );
 
-          if (timeSlot) {
-            const scheduleItem = {
+          const conflict = findScheduleConflict(proposedStart, proposedEnd);
+
+          if (!duplicate && !conflict) {
+            schedule.push({
               id: `${Date.now()}_${sessionsScheduled}_${Math.floor(
                 Math.random() * 100000
               )}`,
               taskId: task.id,
               taskName: task.name,
-              start: new Date(currentDate).toISOString(),
-              end: new Date(currentDate.getTime() + 30 * 60000).toISOString(), // 30 minutes
+              start: proposedStart.toISOString(),
+              end: proposedEnd.toISOString(),
               type: "pomodoro",
               status: "scheduled",
-              productivity: timeSlot.productivity,
+              productivity: window.productivity,
               source: "focusflow",
-            };
-
-            const isDuplicate = schedule.some(
-              (entry) =>
-                String(entry.taskId) === String(scheduleItem.taskId) &&
-                entry.start === scheduleItem.start &&
-                entry.end === scheduleItem.end
-            );
-
-            if (!isDuplicate) {
-              schedule.push(scheduleItem);
-            }
+            });
             sessionsScheduled++;
-
-            // Move to next 30-min slot
-            currentDate.setMinutes(currentDate.getMinutes() + 30);
-          } else {
-            // Move to next hour
-            currentDate.setHours(currentDate.getHours() + 1);
+            currentDate = new Date(proposedEnd);
+            continue;
           }
 
-          // If end of day, move to next day
-          if (hour >= 21) {
-            currentDate.setDate(currentDate.getDate() + 1);
-            currentDate.setHours(9, 0, 0, 0);
+          if (conflict) {
+            const conflictEnd = conflict.end
+              ? new Date(conflict.end)
+              : new Date(proposedEnd);
+            currentDate = roundToNextSlot(conflictEnd);
+          } else {
+            currentDate = new Date(proposedEnd);
           }
         }
 
-        // Add deadline marker to schedule
         schedule.push({
           id: `${Date.now()}_${Math.floor(Math.random() * 100000)}_deadline`,
           taskId: task.id,
@@ -1797,7 +2030,7 @@
           dayEnd.setHours(CALENDAR_DAY_END + 1, 0, 0, 0);
           const totalMinutes = (dayEnd - dayStart) / 60000;
 
-          let columnHtml = `<div class="day-column-body" style="height: ${
+          let columnHtml = `<div class="day-column-body" data-day-start="${dayStart.toISOString()}" style="height: ${
             hours.length * CALENDAR_SLOT_HEIGHT
           }px">`;
 
@@ -1923,9 +2156,22 @@
                 event.eventStart
               )} - ${formatCalendarTime(event.eventEnd)}`;
 
-              columnHtml += `<div class="scheduled-task ${statusClass}${
+              const isDragEligible =
+                !isExternal &&
+                (!event.item.status || event.item.status === "scheduled");
+              const baseClasses = `scheduled-task ${statusClass}${
                 isExternal ? " external-event" : ""
-              }" style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${
+              }`;
+              const dragAttributes = isDragEligible
+                ? ' draggable="true" data-draggable="true"'
+                : "";
+              const taskIdAttr =
+                event.item.taskId !== undefined && event.item.taskId !== null
+                  ? ` data-task-id="${event.item.taskId}"`
+                  : "";
+              const blockAttrs = `${dragAttributes} data-schedule-id="${event.item.id}" data-start-iso="${event.item.start}"${taskIdAttr}`;
+
+              columnHtml += `<div class="${baseClasses}"${blockAttrs} style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${
                 event.item.id
               }')">
                 <span class="event-title">${
@@ -1968,12 +2214,178 @@
         container.innerHTML = headerHtml + scrollWrapper;
 
         applyCalendarScrollFocus();
+        enableCalendarDragAndDrop();
 
         const weekEnd = new Date(startOfWeek);
         weekEnd.setDate(startOfWeek.getDate() + 6);
         document.getElementById(
           "currentWeek"
         ).textContent = `${startOfWeek.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`;
+      }
+
+      // Drag-and-drop interactions for calendar focus blocks
+      function enableCalendarDragAndDrop() {
+        const draggableBlocks = document.querySelectorAll(
+          '.scheduled-task[data-draggable="true"]'
+        );
+        draggableBlocks.forEach((block) => {
+          block.addEventListener("dragstart", handleBlockDragStart);
+          block.addEventListener("dragend", handleBlockDragEnd);
+        });
+
+        const columns = document.querySelectorAll(".day-column-body");
+        columns.forEach((column) => {
+          column.addEventListener("dragover", handleCalendarDragOver);
+          column.addEventListener("dragleave", handleCalendarDragLeave);
+          column.addEventListener("drop", handleCalendarDrop);
+        });
+      }
+
+      function handleBlockDragStart(event) {
+        const target = event.currentTarget;
+        const scheduleId = target.dataset.scheduleId;
+        if (!scheduleId) {
+          event.preventDefault();
+          return;
+        }
+
+        draggedScheduleId = scheduleId;
+        target.classList.add("dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", scheduleId);
+        }
+      }
+
+      function handleBlockDragEnd(event) {
+        event.currentTarget.classList.remove("dragging");
+        clearCalendarDragState();
+        draggedScheduleId = null;
+      }
+
+      function handleCalendarDragOver(event) {
+        if (!draggedScheduleId) {
+          return;
+        }
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+        event.currentTarget.classList.add("drag-over");
+      }
+
+      function handleCalendarDragLeave(event) {
+        event.currentTarget.classList.remove("drag-over");
+      }
+
+      function handleCalendarDrop(event) {
+        if (!draggedScheduleId) {
+          return;
+        }
+        event.preventDefault();
+
+        const column = event.currentTarget;
+        column.classList.remove("drag-over");
+        const dayStartIso = column.dataset.dayStart;
+        if (!dayStartIso) {
+          resetDragState(true);
+          return;
+        }
+
+        const dayStart = new Date(dayStartIso);
+        if (Number.isNaN(dayStart.getTime())) {
+          resetDragState(true);
+          return;
+        }
+
+        const scheduleItem = schedule.find(
+          (item) => String(item.id) === String(draggedScheduleId)
+        );
+
+        if (
+          !scheduleItem ||
+          scheduleItem.source === "google" ||
+          scheduleItem.type === "external"
+        ) {
+          resetDragState(true);
+          return;
+        }
+
+        const rect = column.getBoundingClientRect();
+        const relativeY = event.clientY - rect.top;
+        const clampedY = Math.max(0, Math.min(relativeY, rect.height));
+        const halfHourHeight = CALENDAR_SLOT_HEIGHT / 2;
+        const slotIndex = Math.floor(clampedY / halfHourHeight);
+        const minutesFromStart = slotIndex * 30;
+
+        const newStart = new Date(
+          dayStart.getTime() + minutesFromStart * 60000
+        );
+        newStart.setSeconds(0, 0);
+
+        const currentStart = new Date(scheduleItem.start);
+        const currentEnd = scheduleItem.end
+          ? new Date(scheduleItem.end)
+          : new Date(currentStart.getTime() + FOCUS_SLOT_MS);
+        const durationMs = Math.max(
+          currentEnd.getTime() - currentStart.getTime(),
+          FOCUS_SLOT_MS
+        );
+        const newEnd = new Date(newStart.getTime() + durationMs);
+
+        const relatedTask = scheduleItem.taskId
+          ? tasks.find(
+              (task) => String(task.id) === String(scheduleItem.taskId)
+            )
+          : null;
+
+        if (relatedTask && relatedTask.deadline) {
+          const deadlineDate = new Date(relatedTask.deadline);
+          if (!Number.isNaN(deadlineDate.getTime())) {
+            const deadlineEnd = new Date(deadlineDate);
+            deadlineEnd.setHours(23, 59, 59, 999);
+            if (newEnd.getTime() > deadlineEnd.getTime()) {
+              showDeadlineErrorModal();
+              resetDragState(true);
+              return;
+            }
+          }
+        }
+
+        if (hasScheduleConflict(newStart, newEnd, scheduleItem.id)) {
+          showNotification(
+            "Slot Occupied",
+            "That time already contains an event. Try a different slot."
+          );
+          resetDragState(true);
+          return;
+        }
+
+        scheduleItem.start = newStart.toISOString();
+        scheduleItem.end = newEnd.toISOString();
+
+        clearCalendarDragState();
+        draggedScheduleId = null;
+        sortScheduleEntries();
+        saveSchedule({ enforce: false });
+        renderCalendar();
+      }
+
+      function clearCalendarDragState() {
+        document
+          .querySelectorAll(".day-column-body.drag-over")
+          .forEach((column) => column.classList.remove("drag-over"));
+      }
+
+      function resetDragState(shouldRerender = false) {
+        clearCalendarDragState();
+        document
+          .querySelectorAll(".scheduled-task.dragging")
+          .forEach((block) => block.classList.remove("dragging"));
+        draggedScheduleId = null;
+        if (shouldRerender) {
+          renderCalendar();
+        }
       }
 
       function changeWeek(offset) {
@@ -2509,6 +2921,37 @@
         }
       }
 
+      function showDeadlineErrorModal() {
+        showErrorModal(
+          "Can't place block because the deadline would have passed by then."
+        );
+      }
+
+      function showErrorModal(message) {
+        const modal = document.getElementById("errorModal");
+        if (!modal) {
+          return;
+        }
+        const messageNode = document.getElementById("errorModalMessage");
+        if (messageNode) {
+          messageNode.textContent = message;
+        }
+        modal.classList.add("show");
+      }
+
+      function closeErrorModal() {
+        const modal = document.getElementById("errorModal");
+        if (modal) {
+          modal.classList.remove("show");
+        }
+      }
+
+      function handleErrorModalOverlayClick(event) {
+        if (event.target && event.target.id === "errorModal") {
+          closeErrorModal();
+        }
+      }
+
       // Handle notification actions
       function handleNotification(action) {
         const notification = document.getElementById("notification");
@@ -2827,7 +3270,11 @@
         saveStorage("tasks", tasks);
       }
 
-      function saveSchedule() {
+      function saveSchedule(options = {}) {
+        if (options.enforce !== false) {
+          resolveFocusConflicts({ save: false });
+          sortScheduleEntries();
+        }
         saveStorage("schedule", schedule);
         pruneNotificationCaches();
       }
