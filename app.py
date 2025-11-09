@@ -85,6 +85,12 @@ def auth():
     auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
     return redirect(auth_url)
 
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.pop('credentials', None)
+    return jsonify({'status': 'logged_out'})
+
 @app.route('/oauth2callback')
 def oauth2callback():
     # ALLOW HTTP FOR LOCAL DEV
@@ -258,6 +264,60 @@ def submit_feedback():
         c.execute("UPDATE tasks SET days_req = days_req + ? WHERE id=?", (extra_time // 24, task_id))  # Assuming hours
     conn.commit()
     return jsonify({'status': 'submitted'})
+
+
+@app.route('/ai_insights', methods=['POST'])
+def ai_insights():
+    payload = request.get_json(silent=True) or {}
+    tasks_payload = payload.get('tasks') or []
+    schedule_payload = payload.get('schedule') or []
+    timestamp = payload.get('timestamp') or datetime.datetime.now().isoformat()
+
+    def _format_task(entry):
+        name = entry.get('name', 'Task')
+        deadline = entry.get('deadline', 'unspecified')
+        remaining = entry.get('remainingHours')
+        priority = entry.get('priority')
+        parts = [f"- {name}"]
+        if deadline:
+            parts.append(f"deadline: {deadline}")
+        if remaining is not None:
+            parts.append(f"remaining hours: {remaining}")
+        if priority is not None:
+            parts.append(f"priority: {priority}")
+        return ' | '.join(parts)
+
+    def _format_block(entry):
+        name = entry.get('name', 'Block')
+        start = entry.get('start', 'unknown start')
+        end = entry.get('end', 'unknown end')
+        source = entry.get('source', 'focusflow')
+        status = entry.get('status', 'scheduled')
+        return f"- {name} [{source}] {start} -> {end} (status: {status})"
+
+    task_lines = '\n'.join(_format_task(task) for task in tasks_payload) or 'No active tasks provided.'
+    block_lines = '\n'.join(_format_block(block) for block in schedule_payload) or 'No scheduled focus blocks.'
+
+    prompt = (
+        "You are a concise productivity coach. Based on the user's tasks and the next focus blocks, "
+        "offer one actionable tip (maximum two sentences) that will help them stay productive."
+        "\n\nCurrent timestamp: "
+        f"{timestamp}\n\nTasks:\n{task_lines}\n\nUpcoming focus blocks:\n{block_lines}\n"
+        "Respond with direct advice only."
+    )
+
+    suggestion = "Stay focused and revisit your top priority task for a quick win today."
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        if response and getattr(response, 'text', None):
+            candidate = response.text.strip()
+            if candidate:
+                suggestion = candidate
+    except Exception as exc:  # pragma: no cover - best effort logging
+        app.logger.warning('AI insight generation failed: %s', exc)
+
+    return jsonify({'message': suggestion[:500]})
 
 # Task Completed
 @app.route('/complete_task', methods=['POST'])

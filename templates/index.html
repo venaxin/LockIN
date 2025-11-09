@@ -65,6 +65,25 @@
         text-align: center;
         color: white;
         margin-bottom: 30px;
+        position: relative;
+  padding-top: 40px;
+      }
+
+      .header-actions {
+        position: absolute;
+        top: 0;
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .header-actions .header-google-btn {
+        padding: 8px 16px;
+        font-size: 0.9em;
+        border-width: 1px;
+        min-width: 180px;
+        justify-content: center;
       }
 
       .header .logo {
@@ -721,6 +740,12 @@
           height: 100px;
         }
 
+        .header-actions {
+          position: static;
+          justify-content: flex-end;
+          margin-bottom: 10px;
+        }
+
         .modal-meta {
           grid-template-columns: 1fr;
         }
@@ -730,15 +755,20 @@
   <body>
     <div class="container">
       <div class="header">
+        <div class="header-actions">
+          <button class="google-btn header-google-btn" id="googleAuthButton">
+            Connect Google Calendar
+          </button>
+          <button onclick="requestNotificationPermission()">
+            Enable Notifications
+          </button>
+        </div>
         <img
           src="{{ url_for('static', filename='images/LockIN-logo-noBG.png') }}"
           class="logo"
           alt="LockIN logo"
         />
-        <p>AI-Powered Task Scheduling with Pomodoro Tracking</p>
-        <button onclick="requestNotificationPermission()">
-          Enable Notifications
-        </button>
+        <p>Find your flow, stay locked in.</p>
       </div>
 
       <div class="main-grid">
@@ -937,12 +967,22 @@
         <span
           id="authStatus"
           style="font-size: 0.8em; color: #48bb78; margin-left: 10px"
-        ></span>
+          >Not Connected</span
+        >
       </h3>
-      <button class="google-btn" id="connectBtn" onclick="initiateGoogleAuth()">
-        Connect Google Calendar
+      <button
+        class="google-btn"
+        id="refreshEventsBtn"
+        style="display: none"
+        onclick="refreshGoogleEvents()"
+      >
+        Refresh Google Events
       </button>
-      <div id="calendarEvents" style="margin-top: 15px"></div>
+      <div id="calendarEvents" style="margin-top: 15px">
+        <p style="color: #718096">
+          Connect from the top-right button to sync your Google Calendar.
+        </p>
+      </div>
     </div>
 
     <script>
@@ -953,9 +993,25 @@
       let tasks = JSON.parse(localStorage.getItem("tasks") || "[]");
       let schedule = JSON.parse(localStorage.getItem("schedule") || "[]");
       let dismissedGoogleEvents = new Set(
-        JSON.parse(localStorage.getItem("dismissedGoogleEvents") || "[]")
+        JSON.parse(localStorage.getItem("dismissedGoogleEvents") || "[]").map(
+          String
+        )
       );
-  let activeScheduleId = null;
+      let notifiedSlots = new Set(
+        JSON.parse(localStorage.getItem("notifiedSlots") || "[]").map(String)
+      );
+      let notifiedDeadlines = new Set(
+        JSON.parse(localStorage.getItem("notifiedDeadlines") || "[]").map(
+          String
+        )
+      );
+      let lastMissedNotificationDate = localStorage.getItem(
+        "lastMissedNotificationDate"
+      );
+      let lastAiNotification = Number(
+        localStorage.getItem("lastAiNotification") || "0"
+      );
+      let activeScheduleId = null;
       let currentTask = null;
       let pomodoroInterval = null;
       let pomodoroTimeLeft = 25 * 60;
@@ -985,6 +1041,7 @@
           prevWeekBtn.addEventListener("click", () => changeWeek(-1));
           nextWeekBtn.addEventListener("click", () => changeWeek(1));
         }
+        updateGoogleAuthUI();
         renderTasks();
         renderCalendar();
         updateStats();
@@ -996,11 +1053,8 @@
           .then((data) => {
             document.getElementById("googleCalSection").style.display = "block";
             googleAccountAuthenticated = !!data.authenticated;
-            if (data.authenticated) {
-              document.getElementById("connectBtn").textContent = "Connected";
-              document.getElementById("connectBtn").disabled = true;
-              document.getElementById("authStatus").textContent =
-                "Authenticated";
+            updateGoogleAuthUI();
+            if (googleAccountAuthenticated) {
               loadGoogleAPI();
               setTimeout(authenticateGapiWithFlaskToken, 1000);
             }
@@ -1513,10 +1567,7 @@
               if (boundedEnd <= 0 || boundedStart >= totalMinutes) {
                 return null;
               }
-              const effectiveEnd = Math.max(
-                boundedEnd,
-                boundedStart + 30
-              );
+              const effectiveEnd = Math.max(boundedEnd, boundedStart + 30);
               return {
                 item,
                 eventStart,
@@ -1536,10 +1587,7 @@
           const clusters = [];
           let activeCluster = null;
           dayEvents.forEach((event) => {
-            if (
-              !activeCluster ||
-              event.startMinutes >= activeCluster.maxEnd
-            ) {
+            if (!activeCluster || event.startMinutes >= activeCluster.maxEnd) {
               activeCluster = {
                 events: [],
                 maxEnd: event.endMinutes,
@@ -1588,8 +1636,7 @@
 
             cluster.events.forEach((event) => {
               const columnCount = cluster.columnCount || 1;
-              const top =
-                (event.startMinutes / 60) * CALENDAR_SLOT_HEIGHT;
+              const top = (event.startMinutes / 60) * CALENDAR_SLOT_HEIGHT;
               const height = Math.max(
                 ((event.endMinutes - event.startMinutes) / 60) *
                   CALENDAR_SLOT_HEIGHT,
@@ -1597,7 +1644,8 @@
               );
 
               const columnWidth = Math.round((100 / columnCount) * 1000) / 1000;
-              const leftPercent = Math.round(columnWidth * event.column * 1000) / 1000;
+              const leftPercent =
+                Math.round(columnWidth * event.column * 1000) / 1000;
               const widthStyle =
                 columnCount > 1
                   ? `calc(${columnWidth}% - 6px)`
@@ -1619,7 +1667,9 @@
 
               columnHtml += `<div class="scheduled-task ${statusClass}${
                 isExternal ? " external-event" : ""
-              }" style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${event.item.id}')">
+              }" style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${
+                event.item.id
+              }')">
                 <span class="event-title">${
                   event.item.taskName || "Scheduled Block"
                 }</span>
@@ -1687,6 +1737,100 @@
         openScheduleModal(String(scheduleId));
       }
 
+      function updateGoogleAuthUI() {
+        const authButton = document.getElementById("googleAuthButton");
+        const authStatus = document.getElementById("authStatus");
+        const refreshBtn = document.getElementById("refreshEventsBtn");
+        const eventsContainer = document.getElementById("calendarEvents");
+
+        if (authButton) {
+          if (googleAccountAuthenticated) {
+            authButton.textContent = "Logout Google";
+            authButton.onclick = logoutGoogle;
+          } else {
+            authButton.textContent = "Connect Google Calendar";
+            authButton.onclick = initiateGoogleAuth;
+          }
+        }
+
+        if (authStatus) {
+          if (googleAccountAuthenticated) {
+            authStatus.textContent = "Authenticated";
+            authStatus.style.color = "#48bb78";
+          } else {
+            authStatus.textContent = "Not Connected";
+            authStatus.style.color = "#e53e3e";
+          }
+        }
+
+        if (refreshBtn) {
+          refreshBtn.style.display = googleAccountAuthenticated
+            ? "inline-flex"
+            : "none";
+        }
+
+        if (eventsContainer) {
+          if (googleAccountAuthenticated) {
+            if (!eventsContainer.dataset.loadedOnce) {
+              eventsContainer.innerHTML = "<p>Loading events...</p>";
+            }
+          } else {
+            delete eventsContainer.dataset.loadedOnce;
+            eventsContainer.innerHTML =
+              '<p style="color: #718096">Connect from the top-right button to sync your Google Calendar.</p>';
+          }
+        }
+      }
+
+      function logoutGoogle() {
+        fetch("/logout", { method: "POST" })
+          .then(() => {
+            googleAccountAuthenticated = false;
+            calendarApiLoaded = false;
+            if (typeof gapi !== "undefined" && gapi.client) {
+              gapi.client.setToken(null);
+            }
+            schedule = schedule.filter(
+              (item) => item.source !== "google" && item.type !== "external"
+            );
+            saveSchedule();
+            renderCalendar();
+            updateGoogleAuthUI();
+          })
+          .catch((error) => {
+            console.error("Failed to logout from Google", error);
+            showNotification(
+              "Logout Failed",
+              "Could not disconnect Google right now. Please try again."
+            );
+          });
+      }
+
+      function refreshGoogleEvents() {
+        if (!googleAccountAuthenticated) {
+          showNotification(
+            "Connect Google",
+            "Link your Google Calendar from the top-right button first."
+          );
+          return;
+        }
+
+        const eventsContainer = document.getElementById("calendarEvents");
+        if (eventsContainer) {
+          eventsContainer.innerHTML = "<p>Refreshing events...</p>";
+        }
+
+        ensureCalendarApiLoaded()
+          .then(() => loadCalendarEvents(currentWeekStart))
+          .catch((error) => {
+            console.error("Failed to refresh Google events", error);
+            showNotification(
+              "Refresh Failed",
+              "Unable to refresh Google Calendar events right now."
+            );
+          });
+      }
+
       function openScheduleModal(scheduleId) {
         const modal = document.getElementById("eventModal");
         if (!modal) {
@@ -1711,17 +1855,21 @@
           item.taskName || "Scheduled Block";
         document.getElementById(
           "modalTime"
-        ).textContent = `${start.toLocaleString()} - ${end.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}`;
+        ).textContent = `${start.toLocaleString()} - ${end.toLocaleTimeString(
+          [],
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+          }
+        )}`;
 
         document.getElementById("modalSource").textContent =
           item.source === "google" || item.type === "external"
             ? "Google Calendar"
             : "FocusFlow";
-        document.getElementById("modalStatus").textContent =
-          (item.status || "scheduled").replace(/-/g, " ");
+        document.getElementById("modalStatus").textContent = (
+          item.status || "scheduled"
+        ).replace(/-/g, " ");
         document.getElementById("modalDuration").textContent = formatDuration(
           end.getTime() - start.getTime()
         );
@@ -1751,7 +1899,8 @@
             ? `Focus block for "${relatedTask.name}".${priorityInfo}`
             : "Focus block scheduled via AI.";
           document.getElementById("modalDescription").textContent = description;
-          document.getElementById("modalStartBtn").style.display = "inline-flex";
+          document.getElementById("modalStartBtn").style.display =
+            "inline-flex";
           const deleteBtn = document.getElementById("modalDeleteBtn");
           deleteBtn.style.display = "inline-flex";
           deleteBtn.textContent = "Delete Block";
@@ -1810,7 +1959,7 @@
 
         const [removed] = schedule.splice(index, 1);
         if (removed && removed.source === "google" && removed.externalId) {
-          dismissedGoogleEvents.add(removed.externalId);
+          dismissedGoogleEvents.add(String(removed.externalId));
           saveDismissedGoogleEvents();
         }
         saveSchedule();
@@ -1876,6 +2025,8 @@
 
       function updateSigninStatus(isSignedIn) {
         if (isSignedIn && gapi.client.getToken()) {
+          googleAccountAuthenticated = true;
+          updateGoogleAuthUI();
           ensureCalendarApiLoaded()
             .then(() => loadCalendarEvents(currentWeekStart))
             .catch((error) => {
@@ -1931,6 +2082,10 @@
 
       function displayGoogleEvents(events) {
         const container = document.getElementById("calendarEvents");
+        if (!container) {
+          return;
+        }
+        container.dataset.loadedOnce = "true";
         if (events.length > 0) {
           container.innerHTML = "<h4>Upcoming Google Calendar Events:</h4>";
           events.forEach((event) => {
@@ -1993,19 +2148,22 @@
 
         const normalizedEvents = events
           .filter((event) => event && event.id && event.start)
+          .map((event) => ({ ...event, id: String(event.id) }))
           .filter((event) => !dismissedGoogleEvents.has(event.id));
         const incomingIds = new Set(normalizedEvents.map((event) => event.id));
 
         schedule = schedule.filter((item) => {
           if (item && item.source === "google" && item.externalId) {
-            return incomingIds.has(item.externalId);
+            return incomingIds.has(String(item.externalId));
           }
           return true;
         });
 
         normalizedEvents.forEach((event) => {
           const alreadySynced = schedule.some(
-            (item) => item.source === "google" && item.externalId === event.id
+            (item) =>
+              item.source === "google" &&
+              String(item.externalId) === String(event.id)
           );
           if (alreadySynced) {
             return;
@@ -2101,40 +2259,216 @@
         }
       }
 
-      // Check for upcoming scheduled tasks
       function startNotificationChecker() {
-        setInterval(() => {
-          const now = new Date();
-          const upcoming = schedule.filter((s) => {
-            const startTime = new Date(s.start);
-            const timeDiff = (startTime - now) / (1000 * 60); // minutes
-            return timeDiff > 0 && timeDiff <= 5 && s.status === "scheduled";
-          });
+        runNotificationSweep();
+        if (!window.focusflowNotificationInterval) {
+          window.focusflowNotificationInterval = setInterval(
+            runNotificationSweep,
+            60000
+          );
+        }
 
-          if (upcoming.length > 0) {
-            const next = upcoming[0];
-            showNotification(
-              "Upcoming Task",
-              `"${next.taskName}" starts in 5 minutes. Get ready!`
+        if (!window.focusflowAiInterval) {
+          setTimeout(() => {
+            runAiInsights();
+            window.focusflowAiInterval = setInterval(
+              runAiInsights,
+              45 * 60 * 1000
             );
-          }
+          }, 5 * 60 * 1000);
+        }
+      }
 
-          // Check for missed deadlines
-          tasks.forEach((task) => {
-            if (task.status !== "completed") {
-              const hoursUntilDeadline =
-                (task.deadline - now) / (1000 * 60 * 60);
-              if (hoursUntilDeadline > 0 && hoursUntilDeadline <= 1) {
-                showNotification(
-                  "⚠️ Deadline Alert",
-                  `"${task.name}" deadline in ${Math.round(
-                    hoursUntilDeadline * 60
-                  )} minutes!`
-                );
-              }
+      function runNotificationSweep() {
+        const now = new Date();
+        checkUpcomingFocusBlocks(now);
+        checkDeadlineAlerts(now);
+        checkMissedTasks(now);
+      }
+
+      function checkUpcomingFocusBlocks(now) {
+        const toleranceMs = 60 * 1000;
+        schedule.forEach((item) => {
+          if (!item || item.type === "deadline") {
+            return;
+          }
+          if (item.status && item.status !== "scheduled") {
+            return;
+          }
+          const startTime = new Date(item.start);
+          const diff = now.getTime() - startTime.getTime();
+          if (diff >= 0 && diff <= toleranceMs) {
+            const key = String(item.id);
+            if (!notifiedSlots.has(key)) {
+              const label = item.taskName || "Scheduled Block";
+              showNotification(
+                "Focus Block Starting",
+                `"${label}" is starting now. Dive in!`
+              );
+              notifiedSlots.add(key);
+              saveNotifiedSlots();
             }
+          }
+        });
+      }
+
+      function checkDeadlineAlerts(now) {
+        const todayKey = now.toISOString().slice(0, 10);
+        if (now.getHours() >= 12) {
+          return;
+        }
+        notifiedDeadlines = new Set(
+          Array.from(notifiedDeadlines).filter((key) => key.endsWith(todayKey))
+        );
+        saveNotifiedDeadlines();
+        tasks.forEach((task) => {
+          if (!task || task.status === "completed") {
+            return;
+          }
+          const deadlineDate = new Date(task.deadline);
+          if (!isSameDay(deadlineDate, now)) {
+            return;
+          }
+          const key = `${task.id}_${todayKey}`;
+          if (!notifiedDeadlines.has(key)) {
+            showNotification(
+              "Deadline Today",
+              `"${task.name}" is due today. Make sure it lands on your schedule.`
+            );
+            notifiedDeadlines.add(key);
+            saveNotifiedDeadlines();
+          }
+        });
+      }
+
+      function checkMissedTasks(now) {
+        const todayKey = now.toISOString().slice(0, 10);
+        if (lastMissedNotificationDate === todayKey) {
+          return;
+        }
+
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const endOfYesterday = new Date(startOfToday.getTime() - 1);
+
+        const missed = schedule.filter((item) => {
+          if (!item || item.type === "deadline") {
+            return false;
+          }
+          if (item.status && item.status !== "scheduled") {
+            return false;
+          }
+          const startTime = new Date(item.start);
+          return (
+            startTime >= startOfYesterday && startTime <= endOfYesterday
+          );
+        });
+
+        if (missed.length > 0) {
+          const message =
+            missed.length === 1
+              ? `You missed "${missed[0].taskName}" yesterday. Consider rescheduling it.`
+              : `You missed ${missed.length} focus blocks yesterday. Review and reschedule them.`;
+          showNotification(
+            missed.length === 1
+              ? "Missed Focus Block"
+              : "Missed Focus Blocks",
+            message
+          );
+        }
+
+        lastMissedNotificationDate = todayKey;
+        localStorage.setItem(
+          "lastMissedNotificationDate",
+          lastMissedNotificationDate
+        );
+      }
+
+      function runAiInsights() {
+        if (Date.now() - lastAiNotification < 15 * 60 * 1000) {
+          return;
+        }
+
+        const activeTasks = tasks
+          .filter((task) => task && task.status !== "completed")
+          .map((task) => ({
+            name: task.name,
+            deadline: (() => {
+              const parsed = new Date(task.deadline);
+              return Number.isNaN(parsed.getTime())
+                ? null
+                : parsed.toISOString();
+            })(),
+            priority: task.priority || null,
+            remainingHours: Math.max(
+              0,
+              (task.totalHours || 0) - (task.completedHours || 0)
+            ),
+          }));
+
+        const upcomingBlocks = schedule
+          .filter((item) => item && item.type !== "deadline")
+          .map((item) => ({
+            name: item.taskName,
+            start: (() => {
+              const parsed = new Date(item.start);
+              return Number.isNaN(parsed.getTime())
+                ? null
+                : parsed.toISOString();
+            })(),
+            end: (() => {
+              if (!item.end) {
+                return null;
+              }
+              const parsedEnd = new Date(item.end);
+              return Number.isNaN(parsedEnd.getTime())
+                ? null
+                : parsedEnd.toISOString();
+            })(),
+            source: item.source || "focusflow",
+            status: item.status || "scheduled",
+          }));
+
+        if (activeTasks.length === 0 && upcomingBlocks.length === 0) {
+          return;
+        }
+
+        lastAiNotification = Date.now();
+        localStorage.setItem("lastAiNotification", String(lastAiNotification));
+
+        fetch("/ai_insights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            timestamp: new Date().toISOString(),
+            tasks: activeTasks.slice(0, 20),
+            schedule: upcomingBlocks.slice(0, 40),
+          }),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("AI insights unavailable");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data && data.message) {
+              showNotification("AI Coach", data.message.trim());
+            }
+          })
+          .catch((error) => {
+            console.error("Failed to fetch AI insight", error);
           });
-        }, 60000); // Check every minute
+      }
+
+      function isSameDay(a, b) {
+        return (
+          a.getFullYear() === b.getFullYear() &&
+          a.getMonth() === b.getMonth() &&
+          a.getDate() === b.getDate()
+        );
       }
 
       // Update statistics
@@ -2163,6 +2497,7 @@
 
       function saveSchedule() {
         localStorage.setItem("schedule", JSON.stringify(schedule));
+        pruneNotificationCaches();
       }
 
       function saveDismissedGoogleEvents() {
@@ -2170,6 +2505,28 @@
           "dismissedGoogleEvents",
           JSON.stringify(Array.from(dismissedGoogleEvents))
         );
+      }
+
+      function saveNotifiedSlots() {
+        localStorage.setItem(
+          "notifiedSlots",
+          JSON.stringify(Array.from(notifiedSlots))
+        );
+      }
+
+      function saveNotifiedDeadlines() {
+        localStorage.setItem(
+          "notifiedDeadlines",
+          JSON.stringify(Array.from(notifiedDeadlines))
+        );
+      }
+
+      function pruneNotificationCaches() {
+        const validIds = new Set(schedule.map((item) => String(item.id)));
+        notifiedSlots = new Set(
+          Array.from(notifiedSlots).filter((id) => validIds.has(String(id)))
+        );
+        saveNotifiedSlots();
       }
 
       // // Request notification permission
