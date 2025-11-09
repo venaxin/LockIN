@@ -6,16 +6,40 @@ import sqlite3
 import random
 import pickle
 import json
+from collections import defaultdict
 from dateutil.parser import parse
 import google.generativeai as genai
 
 import os
 from uuid import uuid4
-from typing import Optional
+from typing import Optional, Dict, Any, List, Tuple
 
 # Force correct paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'todo.db')
+
+TASK_CATEGORY_CHOICES = {
+    'deep_work': 'Deep Work',
+    'planning': 'Planning & Strategy',
+    'communication': 'Communication',
+    'collaboration': 'Collaboration',
+    'learning': 'Learning & Growth',
+    'quality': 'Quality & QA',
+    'admin': 'Operations & Admin',
+    'health': 'Health & Wellness',
+    'creative': 'Creative Work',
+    'general': 'General',
+}
+
+CATEGORY_ALIASES: Dict[str, str] = {}
+for slug, label in TASK_CATEGORY_CHOICES.items():
+    CATEGORY_ALIASES[slug] = slug
+    CATEGORY_ALIASES[label.lower()] = slug
+    CATEGORY_ALIASES[label.lower().replace('&', 'and')] = slug
+    CATEGORY_ALIASES[slug.replace('_', ' ')] = slug
+
+# Helpful alias coverage for legacy seed data
+CATEGORY_ALIASES['strategy'] = 'planning'
 
 app = Flask(
     __name__,
@@ -23,6 +47,8 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "assets"),
     static_url_path="/assets",
 )
+
+logger = app.logger
 
 app.secret_key = os.urandom(24)          # random secret for session
 CREDENTIALS_FILE = 'credentials.json'
@@ -34,6 +60,12 @@ SCOPES = [
 ]
 
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+
+try:
+    MODEL = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as exc:  # pragma: no cover - network call
+    MODEL = None
+    logger.warning('Gemini model unavailable: %s', exc)
 
 
 @app.before_request
@@ -70,6 +102,7 @@ def ensure_google_identity(credentials) -> str | None:
 
 # Database setup
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+conn.row_factory = sqlite3.Row
 conn.execute('PRAGMA foreign_keys = ON')
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS tasks
@@ -87,6 +120,13 @@ conn.commit()
 def column_exists(table: str, column: str) -> bool:
     c.execute(f"PRAGMA table_info({table})")
     return any(row[1] == column for row in c.fetchall())
+
+
+def get_db() -> sqlite3.Connection:
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    connection.execute('PRAGMA foreign_keys = ON')
+    return connection
 
 
 def compute_priority_score(deadline_value, status, missed, estimated_minutes, actual_minutes, completed) -> float:
@@ -282,6 +322,110 @@ def upgrade_schema() -> None:
     conn.commit()
 
 
+def normalize_category(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return 'general'
+    value = raw.strip().lower()
+    if not value:
+        return 'general'
+    normalized = value.replace('&', 'and')
+    return CATEGORY_ALIASES.get(normalized, CATEGORY_ALIASES.get(value, 'general'))
+
+
+def _extract_json_dict(response_text: str) -> Dict[str, Any]:
+    try:
+        cleaned = response_text.strip()
+        if cleaned.startswith('```'):
+            cleaned = cleaned.strip('`')
+        payload = json.loads(cleaned)
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        logger.warning('Failed to decode classifier response: %s', response_text)
+    return {}
+
+
+def classify_task_with_ai(title: str, description: str = '') -> Dict[str, Any]:
+    if not MODEL:
+        return {}
+    prompt = {
+        'task_title': title,
+        'task_description': description or '',
+        'category_slugs': sorted(set(CATEGORY_ALIASES.values())),
+        'category_labels': TASK_CATEGORY_CHOICES,
+    }
+    try:
+        response = MODEL.generate_content([
+            (
+                'You are an executive productivity coach. '
+                'Classify the task into one of the provided categories (respond with the category slug). '
+                'Provide JSON with keys: category, buffer_days, focus_level, procrastination_risk, notes, pomodoro_plan. '
+                'focus_level and procrastination_risk must be numbers between 0 and 1. '
+                'buffer_days must be an integer (>=0). '
+                'pomodoro_plan should be an array of short strings. '
+                'Respond with JSON only.'
+            ),
+            json.dumps(prompt),
+        ])
+        text = getattr(response, 'text', None) or ''
+        if not text and hasattr(response, 'candidates'):
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    text = ''.join(part.text for part in candidate.content.parts if getattr(part, 'text', None))
+                    if text:
+                        break
+        data = _extract_json_dict(text)
+        data['category'] = normalize_category(data.get('category'))
+        return data
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception('Task classification failed: %s', exc)
+        return {}
+
+
+def serialize_task_row(row: sqlite3.Row) -> Dict[str, Any]:
+    data = dict(row)
+    for field, value in list(data.items()):
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            data[field] = value.isoformat()
+    return data
+
+
+def fetch_task_dict(task_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tasks WHERE id = ?', (task_id,))
+        row = cursor.fetchone()
+        return serialize_task_row(row) if row else None
+    finally:
+        conn.close()
+
+
+def coerce_date(value: Any) -> Optional[datetime.date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    try:
+        return parse(str(value)).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def coerce_datetime(value: Any) -> Optional[datetime.datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    try:
+        return parse(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
 upgrade_schema()
 
 
@@ -351,8 +495,8 @@ def seed_mock_data(user_id: str) -> None:
             """,
             (
                 task_id,
-                slot_start,
-                slot_end,
+                slot_start.isoformat(),
+                slot_end.isoformat(),
                 user_id,
             ),
         )
@@ -363,8 +507,8 @@ def seed_mock_data(user_id: str) -> None:
             """,
             (
                 task_id,
-                slot_start,
-                slot_end,
+                slot_start.isoformat(),
+                slot_end.isoformat(),
                 entry['hours_daily'] * 60,
                 'moderate',
                 'Sample focus block seeded for demo.',
@@ -373,7 +517,89 @@ def seed_mock_data(user_id: str) -> None:
         )
         record_task_activity(task_id, minutes=entry['hours_daily'] * 60)
 
+    c.execute("SELECT id, category FROM tasks WHERE user_id=?", (user_id,))
+    seeded_tasks = [(row['id'], row['category']) for row in c.fetchall()]
+
+    history_cutoff = (now - datetime.timedelta(days=2)).isoformat()
+    c.execute(
+        "SELECT COUNT(*) FROM task_sessions WHERE user_id=? AND started_at < ?",
+        (user_id, history_cutoff),
+    )
+    if (c.fetchone() or (0,))[0] == 0:
+        seed_productivity_history(seeded_tasks, user_id, now)
+
     conn.commit()
+
+
+def seed_productivity_history(task_rows: List[Tuple[int, Optional[str]]], user_id: str,
+                              anchor: datetime.datetime) -> None:
+    if not task_rows:
+        return
+
+    intensity_options = ['light', 'moderate', 'deep']
+    notes_templates = [
+        'Deep work interval seeded for analytics.',
+        'Focus sprint logged automatically.',
+        'Historical session to warm up dashboard.',
+    ]
+
+    for day_offset in range(3, 15):
+        day = anchor - datetime.timedelta(days=day_offset)
+        session_count = random.randint(1, 3)
+
+        for _ in range(session_count):
+            task_id, category = random.choice(task_rows)
+            duration = random.choice([25, 30, 45, 50, 60])
+            start_hour = random.choice([8, 9, 10, 13, 14, 15, 20])
+            start_time = datetime.datetime.combine(day.date(), datetime.time(start_hour, 0))
+            start_time += datetime.timedelta(minutes=random.choice([0, 15, 30, 45]))
+            end_time = start_time + datetime.timedelta(minutes=duration)
+
+            c.execute(
+                """
+                INSERT INTO task_sessions (
+                    task_id, started_at, ended_at, duration_minutes, intensity, notes, user_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    start_time.isoformat(),
+                    end_time.isoformat(),
+                    duration,
+                    random.choice(intensity_options),
+                    random.choice(notes_templates),
+                    user_id,
+                ),
+            )
+            record_task_activity(task_id, minutes=duration, activity_time=end_time)
+
+        focus_score = round(random.uniform(0.55, 0.9), 2)
+        risk_score = round(random.uniform(0.05, 0.45), 2)
+        exemplar_task_id, exemplar_category = random.choice(task_rows)
+        metadata = {
+            'category': exemplar_category or 'general',
+            'focus_level': focus_score,
+            'procrastination_risk': risk_score,
+            'buffer_days': 0,
+        }
+
+        c.execute(
+            """
+            INSERT INTO task_metrics (
+                task_id, metric_date, focus_score, energy_level, user_id, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                exemplar_task_id,
+                day.date(),
+                focus_score,
+                random.choice(['low', 'medium', 'high']),
+                user_id,
+                json.dumps(metadata),
+            ),
+        )
 
 def get_calendar_service():
     if 'credentials' not in session:
@@ -451,42 +677,144 @@ def check_auth():
 # Manual Task Input
 @app.route('/add_task', methods=['POST'])
 def add_task():
-    data = request.json
-    name = data['name']
-    deadline = parse(data['deadline']).date()
-    days_req = int(data['days_req'])
-    hours_daily = int(data['hours_daily'])
+    payload = request.get_json(silent=True) or {}
+
+    name = (payload.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'Task name is required'}), 400
+
+    raw_deadline = payload.get('deadline')
+    deadline: Optional[datetime.date] = None
+    if raw_deadline:
+        try:
+            deadline = parse(raw_deadline).date()
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid deadline format'}), 400
+    if deadline is None:
+        deadline = datetime.date.today()
+
+    def coerce_int(value, default=1, minimum=1) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = default
+        return max(parsed, minimum)
+
+    days_req = coerce_int(payload.get('days_req'), 1)
+    hours_daily = coerce_int(payload.get('hours_daily'), 1)
+    description = (payload.get('description') or '').strip()
     user_id = current_user_id()
 
-    model = genai.GenerativeModel('gemini-1.5-flash')  # Or 'gemini-1.5-pro' for more advanced
-    prompt = f"Suggest a buffer time in days for task '{name}' due {deadline} that takes {days_req} days and {hours_daily} hours daily. Also suggest Pomodoro slots."
-    response = model.generate_content(prompt)
-    buffer_suggestion = response.text  # Parse this as needed, e.g., extract numbers
-    buffer_days = int(buffer_suggestion.split()[0])  # Simplified parsing
-    days_req += buffer_days
+    ai_result = classify_task_with_ai(name, description)
+    category_slug = ai_result.get('category') or normalize_category(payload.get('category'))
 
-    c.execute("INSERT INTO tasks (name, deadline, days_req, hours_daily, user_id) VALUES (?, ?, ?, ?, ?)",
-              (name, deadline, days_req, hours_daily, user_id))
-    task_id = c.lastrowid
+    try:
+        buffer_days = max(int(ai_result.get('buffer_days', 0)), 0)
+    except (TypeError, ValueError):
+        buffer_days = 0
 
-    estimated_minutes = int(days_req * hours_daily * 60)
+    total_days = days_req + buffer_days
+    estimated_minutes = total_days * hours_daily * 60
+
+    now = datetime.datetime.now()
     c.execute(
         """
-        UPDATE tasks
-        SET estimated_minutes = ?,
-            status = COALESCE(NULLIF(status, ''), 'planned'),
-            category = COALESCE(NULLIF(category, ''), 'general')
-        WHERE id = ?
+        INSERT INTO tasks (
+            name, deadline, days_req, hours_daily, user_id, category, status,
+            estimated_minutes, last_activity_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (estimated_minutes, task_id),
+        (
+            name,
+            deadline,
+            total_days,
+            hours_daily,
+            user_id,
+            category_slug or 'general',
+            'planned',
+            estimated_minutes,
+            now,
+        ),
     )
+    task_id = c.lastrowid
 
     recompute_task_priority(task_id)
+
+    def coerce_float(value) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    focus_level = coerce_float(ai_result.get('focus_level'))
+    if focus_level is not None:
+        focus_level = max(0.0, min(1.0, focus_level))
+
+    procrastination_risk = coerce_float(ai_result.get('procrastination_risk'))
+    if procrastination_risk is not None:
+        procrastination_risk = max(0.0, min(1.0, procrastination_risk))
+
+    metadata: Dict[str, Any] = {
+        'category': category_slug or 'general',
+        'focus_level': focus_level,
+        'procrastination_risk': procrastination_risk,
+        'buffer_days': buffer_days,
+    }
+    notes_value = ai_result.get('notes')
+    if notes_value:
+        metadata['notes'] = notes_value if isinstance(notes_value, str) else json.dumps(notes_value)
+    pomodoro_plan = ai_result.get('pomodoro_plan')
+    if pomodoro_plan:
+        metadata['pomodoro_plan'] = pomodoro_plan
+
+    metrics_payload = dict(metadata)
+
+    if any(value is not None for key, value in metadata.items() if key in {'focus_level', 'procrastination_risk'}):
+        c.execute(
+            """
+            INSERT INTO task_metrics (
+                task_id, metric_date, focus_score, energy_level, user_id, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                datetime.date.today(),
+                metadata.get('focus_level'),
+                None,
+                user_id,
+                json.dumps(metrics_payload),
+            ),
+        )
+
     conn.commit()
 
-    # Suggest slots (Pomodoro: 25 min work + 5 min break, fit into productive times e.g., 9-5)
-    slots = suggest_slots(task_id, deadline, days_req, hours_daily, user_id)
-    return jsonify({'task_id': task_id, 'suggested_slots': slots, 'buffer_days': buffer_days})
+    slots = suggest_slots(task_id, deadline, total_days, hours_daily, user_id)
+
+    task_payload = fetch_task_dict(task_id) or {}
+    task_payload['buffer_days'] = buffer_days
+    task_payload['focus_level'] = focus_level
+    task_payload['procrastination_risk'] = procrastination_risk
+    task_payload['pomodoro_plan'] = pomodoro_plan
+    task_payload['categoryLabel'] = TASK_CATEGORY_CHOICES.get(
+        task_payload.get('category', 'general'),
+        (task_payload.get('category') or 'general').replace('_', ' ').title(),
+    )
+
+    classification_payload = dict(metadata)
+    classification_payload['categoryLabel'] = TASK_CATEGORY_CHOICES.get(
+        metadata.get('category', 'general'),
+        (metadata.get('category') or 'general').replace('_', ' ').title(),
+    )
+
+    return jsonify(
+        {
+            'task': task_payload,
+            'suggested_slots': slots,
+            'classification': classification_payload,
+        }
+    )
 
 def suggest_slots(task_id, deadline, days_req, hours_daily, user_id):
     slots = []
@@ -680,6 +1008,468 @@ def priority_overview():
 
     return jsonify(response)
 
+
+@app.route('/analytics/productivity')
+def analytics_productivity():
+    user_id = current_user_id()
+    conn = get_db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT s.id, s.task_id, s.started_at, s.ended_at, s.duration_minutes,
+                   s.intensity, s.notes,
+                   t.name AS task_name,
+                   COALESCE(t.category, 'general') AS category,
+                   t.priority_score
+            FROM task_sessions s
+            LEFT JOIN tasks t ON t.id = s.task_id
+            WHERE s.user_id=?
+            ORDER BY COALESCE(s.started_at, s.ended_at) DESC
+            """,
+            (user_id,),
+        )
+        session_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT task_id, metric_date, focus_score, notes
+            FROM task_metrics
+            WHERE user_id=?
+            ORDER BY metric_date DESC
+            """,
+            (user_id,),
+        )
+        metric_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT id, category
+            FROM tasks
+            WHERE user_id=? AND completed=0
+            """,
+            (user_id,),
+        )
+        task_rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    session_minutes: Dict[str, int] = defaultdict(int)
+    category_minutes: Dict[str, int] = defaultdict(int)
+    recent_sessions: List[Dict[str, Any]] = []
+
+    for row in session_rows:
+        duration = int(row['duration_minutes'] or 0)
+        if duration <= 0:
+            continue
+        start_dt = coerce_datetime(row['started_at']) or coerce_datetime(row['ended_at']) or datetime.datetime.now()
+        end_dt = coerce_datetime(row['ended_at'])
+        day_key = start_dt.date().isoformat()
+        session_minutes[day_key] += duration
+        category_slug = row['category'] or 'general'
+        category_minutes[category_slug] += duration
+        if len(recent_sessions) < 5:
+            recent_sessions.append(
+                {
+                    'id': row['id'],
+                    'taskId': row['task_id'],
+                    'taskName': row['task_name'] or 'Focus Block',
+                    'category': category_slug,
+                    'categoryLabel': TASK_CATEGORY_CHOICES.get(category_slug, category_slug.replace('_', ' ').title()),
+                    'startedAt': start_dt.isoformat(),
+                    'endedAt': end_dt.isoformat() if end_dt else None,
+                    'durationMinutes': duration,
+                    'intensity': row['intensity'],
+                    'notes': row['notes'],
+                    'priorityScore': row['priority_score'],
+                }
+            )
+
+    focus_map: Dict[str, List[float]] = defaultdict(list)
+    risk_map: Dict[str, List[float]] = defaultdict(list)
+
+    for row in metric_rows:
+        date_obj = coerce_date(row['metric_date'])
+        if not date_obj:
+            continue
+        iso_key = date_obj.isoformat()
+        notes_payload: Dict[str, Any] = {}
+        if row['notes']:
+            try:
+                notes_payload = json.loads(row['notes'])
+            except json.JSONDecodeError:
+                notes_payload = {}
+
+        focus_val = row['focus_score']
+        if focus_val is None:
+            focus_val = notes_payload.get('focus_level')
+        if focus_val is not None:
+            try:
+                focus_map[iso_key].append(float(focus_val))
+            except (TypeError, ValueError):
+                pass
+
+        risk_val = notes_payload.get('procrastination_risk')
+        if risk_val is not None:
+            try:
+                risk_map[iso_key].append(float(risk_val))
+            except (TypeError, ValueError):
+                pass
+
+    daily_focus = {
+        day: sum(values) / len(values)
+        for day, values in focus_map.items()
+        if values
+    }
+    daily_risk = {
+        day: sum(values) / len(values)
+        for day, values in risk_map.items()
+        if values
+    }
+
+    today = datetime.date.today()
+    timeline: List[Dict[str, Any]] = []
+    focus_units: List[float] = []
+    risk_units: List[float] = []
+
+    for offset in range(6, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        iso_key = day.isoformat()
+        focus_value = daily_focus.get(iso_key)
+        risk_value = daily_risk.get(iso_key)
+        timeline.append(
+            {
+                'date': iso_key,
+                'minutes': int(session_minutes.get(iso_key, 0)),
+                'focus': round(focus_value * 100, 1) if focus_value is not None else None,
+                'risk': round(risk_value * 100, 1) if risk_value is not None else None,
+            }
+        )
+        if focus_value is not None:
+            focus_units.append(focus_value)
+        if risk_value is not None:
+            risk_units.append(risk_value)
+
+    weekly_minutes = sum(entry['minutes'] for entry in timeline)
+    focus_avg_unit = sum(focus_units) / len(focus_units) if focus_units else 0.0
+    intensity_factor = min(weekly_minutes / 840.0, 1.0) if weekly_minutes else 0.0
+    score = int(round(min((0.65 * focus_avg_unit) + (0.35 * intensity_factor), 1.0) * 100))
+
+    state = 'none'
+    if score >= 80:
+        state = 'high'
+    elif score >= 50:
+        state = 'mid'
+    elif score > 0:
+        state = 'low'
+
+    state_messages = {
+        'high': 'Momentum is strong—protect your deep-work windows.',
+        'mid': 'Solid consistency—lock one more focus block to level up.',
+        'low': 'Momentum is slipping—schedule a 30-minute focus sprint today.',
+        'none': 'Log your next focus block to kickstart analytics.',
+    }
+    message = state_messages[state]
+
+    streak = 0
+    streak_cursor = today
+    while session_minutes.get(streak_cursor.isoformat(), 0) > 0:
+        streak += 1
+        streak_cursor -= datetime.timedelta(days=1)
+
+    peak_day = None
+    if timeline:
+        candidate = max(timeline, key=lambda entry: entry['minutes'])
+        if candidate and candidate['minutes'] > 0:
+            peak_day = candidate
+
+    category_counts: Dict[str, int] = defaultdict(int)
+    for row in task_rows:
+        category_counts[row['category'] or 'general'] += 1
+
+    total_category_minutes = sum(category_minutes.values())
+    category_breakdown: List[Dict[str, Any]] = []
+    if total_category_minutes > 0:
+        for slug, minutes in sorted(category_minutes.items(), key=lambda kv: kv[1], reverse=True):
+            if minutes <= 0:
+                continue
+            category_breakdown.append(
+                {
+                    'category': slug,
+                    'label': TASK_CATEGORY_CHOICES.get(slug, slug.replace('_', ' ').title()),
+                    'minutes': int(minutes),
+                    'percent': round((minutes / total_category_minutes) * 100, 1),
+                    'openTasks': category_counts.get(slug, 0),
+                }
+            )
+
+    if not category_breakdown and category_counts:
+        total_tasks = sum(category_counts.values()) or 1
+        for slug, count in sorted(category_counts.items(), key=lambda kv: kv[1], reverse=True):
+            category_breakdown.append(
+                {
+                    'category': slug,
+                    'label': TASK_CATEGORY_CHOICES.get(slug, slug.replace('_', ' ').title()),
+                    'minutes': 0,
+                    'percent': round((count / total_tasks) * 100, 1),
+                    'openTasks': count,
+                }
+            )
+
+    average_focus_pct = round(focus_avg_unit * 100, 1) if focus_units else None
+    average_risk_pct = None
+    if risk_units:
+        average_risk_pct = round((sum(risk_units) / len(risk_units)) * 100, 1)
+
+    response = {
+        'generatedAt': datetime.datetime.now().isoformat(),
+        'userId': user_id,
+        'score': score,
+        'state': state,
+        'message': message,
+        'streakDays': streak,
+        'weeklyMinutes': int(weekly_minutes),
+        'averageFocus': average_focus_pct,
+        'averageRisk': average_risk_pct,
+        'timeline': timeline,
+        'recentSessions': recent_sessions,
+        'categoryBreakdown': category_breakdown,
+        'peakDay': peak_day,
+        'openTasks': len(task_rows),
+    }
+
+    return jsonify(response)
+
+
+@app.route('/analytics/procrastination')
+def analytics_procrastination():
+    user_id = current_user_id()
+    conn = get_db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, deadline, missed, status, category, priority_score,
+                   estimated_minutes, actual_minutes, last_activity_at
+            FROM tasks
+            WHERE user_id=? AND completed=0
+            """,
+            (user_id,),
+        )
+        task_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT task_id, metric_date, notes
+            FROM task_metrics
+            WHERE user_id=?
+            ORDER BY metric_date DESC
+            """,
+            (user_id,),
+        )
+        metric_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT s.slot_start, r.reason, r.timestamp, t.name AS task_name
+            FROM reasons r
+            JOIN schedules s ON s.id = r.schedule_id
+            LEFT JOIN tasks t ON t.id = s.task_id
+            WHERE s.user_id=?
+            ORDER BY r.timestamp DESC
+            LIMIT 6
+            """,
+            (user_id,),
+        )
+        reason_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT started_at, duration_minutes
+            FROM task_sessions
+            WHERE user_id=? AND started_at IS NOT NULL AND duration_minutes IS NOT NULL
+              AND started_at >= datetime('now', '-21 day')
+            """,
+            (user_id,),
+        )
+        slump_rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    metrics_lookup: Dict[int, Dict[str, Any]] = {}
+    for row in metric_rows:
+        task_id = row['task_id']
+        if task_id in metrics_lookup:
+            continue
+        payload: Dict[str, Any] = {}
+        if row['notes']:
+            try:
+                payload = json.loads(row['notes'])
+            except json.JSONDecodeError:
+                payload = {}
+        metrics_lookup[task_id] = payload
+
+    task_insights: List[Dict[str, Any]] = []
+    category_risks: Dict[str, List[float]] = defaultdict(list)
+    risk_values: List[float] = []
+
+    today = datetime.date.today()
+    for row in task_rows:
+        task_id = row['id']
+        category_slug = row['category'] or 'general'
+        deadline_date = coerce_date(row['deadline'])
+        days_until = None
+        if deadline_date:
+            days_until = (deadline_date - today).days
+
+        progress_total = row['estimated_minutes'] or 0
+        actual_minutes = row['actual_minutes'] or 0
+        progress_ratio = (actual_minutes / progress_total) if progress_total else 0.0
+
+        fallback_risk = 0.1
+        fallback_risk += min((row['missed'] or 0) * 0.12, 0.5)
+        if days_until is not None:
+            if days_until < 0:
+                fallback_risk += 0.35
+            elif days_until <= 1:
+                fallback_risk += 0.25
+            elif days_until <= 3:
+                fallback_risk += 0.12
+        if progress_ratio < 0.3:
+            fallback_risk += 0.25
+        elif progress_ratio < 0.6:
+            fallback_risk += 0.1
+
+        metric_payload = metrics_lookup.get(task_id, {})
+        metric_risk = metric_payload.get('procrastination_risk')
+        try:
+            metric_risk = float(metric_risk) if metric_risk is not None else None
+        except (TypeError, ValueError):
+            metric_risk = None
+
+        combined_risk = fallback_risk
+        if metric_risk is not None:
+            combined_risk = (0.6 * metric_risk) + (0.4 * fallback_risk)
+
+        combined_risk = max(0.0, min(1.0, combined_risk))
+        risk_values.append(combined_risk)
+        category_risks[category_slug].append(combined_risk)
+
+        task_insights.append(
+            {
+                'id': task_id,
+                'name': row['name'],
+                'deadline': deadline_date.isoformat() if deadline_date else None,
+                'daysUntil': days_until,
+                'missed': row['missed'],
+                'status': row['status'],
+                'category': category_slug,
+                'priorityScore': row['priority_score'],
+                'risk': combined_risk,
+                'progressRatio': round(progress_ratio, 2),
+                'lastActivityAt': coerce_datetime(row['last_activity_at']).isoformat()
+                if coerce_datetime(row['last_activity_at']) else None,
+            }
+        )
+
+    avg_risk_unit = sum(risk_values) / len(risk_values) if risk_values else 0.0
+    risk_state = 'none'
+    if avg_risk_unit >= 0.65:
+        risk_state = 'high'
+    elif avg_risk_unit >= 0.35:
+        risk_state = 'mid'
+    elif avg_risk_unit > 0:
+        risk_state = 'low'
+
+    if task_insights:
+        at_risk_candidate = max(task_insights, key=lambda entry: (entry['risk'], entry['priorityScore'] or 0))
+        at_risk_task = {
+            'id': at_risk_candidate['id'],
+            'name': at_risk_candidate['name'],
+            'deadline': at_risk_candidate['deadline'],
+            'category': at_risk_candidate['category'],
+            'risk': round(at_risk_candidate['risk'] * 100, 1),
+            'daysUntil': at_risk_candidate['daysUntil'],
+            'missed': at_risk_candidate['missed'],
+            'priorityScore': at_risk_candidate['priorityScore'],
+        }
+    else:
+        at_risk_task = None
+
+    category_summary: List[Dict[str, Any]] = []
+    for slug, values in category_risks.items():
+        if not values:
+            continue
+        category_summary.append(
+            {
+                'category': slug,
+                'label': TASK_CATEGORY_CHOICES.get(slug, slug.replace('_', ' ').title()),
+                'avgRisk': round((sum(values) / len(values)) * 100, 1),
+                'openTasks': len(values),
+            }
+        )
+    category_summary.sort(key=lambda entry: entry['avgRisk'], reverse=True)
+
+    hour_totals: Dict[int, int] = defaultdict(int)
+    hour_counts: Dict[int, int] = defaultdict(int)
+    for row in slump_rows:
+        start_dt = coerce_datetime(row['started_at'])
+        if not start_dt:
+            continue
+        hour_totals[start_dt.hour] += int(row['duration_minutes'] or 0)
+        hour_counts[start_dt.hour] += 1
+
+    slump_windows: List[Dict[str, Any]] = []
+    for hour, count in hour_counts.items():
+        avg_minutes = hour_totals[hour] / max(count, 1)
+        slump_windows.append(
+            {
+                'hour': f"{hour:02d}:00",
+                'avgSessionMinutes': round(avg_minutes, 1),
+                'sessions': count,
+            }
+        )
+    slump_windows.sort(key=lambda entry: entry['avgSessionMinutes'])
+    slump_windows = slump_windows[:3]
+
+    recent_reasons: List[Dict[str, Any]] = []
+    for row in reason_rows:
+        timestamp_dt = coerce_datetime(row['timestamp'])
+        slot_start = coerce_datetime(row['slot_start'])
+        recent_reasons.append(
+            {
+                'reason': row['reason'],
+                'timestamp': timestamp_dt.isoformat() if timestamp_dt else None,
+                'slotStart': slot_start.isoformat() if slot_start else None,
+                'taskName': row['task_name'] or 'Focus Block',
+            }
+        )
+
+    risk_messages = {
+        'high': 'Multiple tasks are slipping—schedule recovery blocks today.',
+        'mid': 'A few tasks need attention—lock a catch-up session this afternoon.',
+        'low': 'Risk is manageable—keep checking in on near-due tasks.',
+        'none': 'No procrastination signals yet—log work to keep insights current.',
+    }
+
+    response = {
+        'generatedAt': datetime.datetime.now().isoformat(),
+        'userId': user_id,
+        'riskIndex': int(round(avg_risk_unit * 100)) if risk_values else 0,
+        'riskState': risk_state,
+        'message': risk_messages[risk_state],
+        'tasksAnalyzed': len(task_insights),
+        'atRiskTask': at_risk_task,
+        'categoryRisk': category_summary,
+        'slumpWindows': slump_windows,
+        'recentReasons': recent_reasons,
+    }
+
+    return jsonify(response)
+
+
 # Detect pattern / Procrastination
 @app.route('/detect_procrastination')
 def detect_procrastination():
@@ -809,6 +1599,44 @@ def ai_insights():
     tasks_payload = payload.get('tasks') or []
     schedule_payload = payload.get('schedule') or []
     timestamp = payload.get('timestamp') or datetime.datetime.now().isoformat()
+    user_id = current_user_id()
+
+    conn = get_db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        cursor.execute(
+            """
+            SELECT name, deadline, category, priority_score
+            FROM tasks
+            WHERE user_id=? AND completed=0 AND deadline IS NOT NULL
+              AND DATE(deadline) <= ?
+            ORDER BY deadline ASC, priority_score DESC
+            LIMIT 3
+            """,
+            (user_id, yesterday),
+        )
+        overdue_rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    overdue_tasks = []
+    overdue_lines = []
+    for row in overdue_rows:
+        deadline_value = coerce_date(row['deadline'])
+        overdue_tasks.append(
+            {
+                'name': row['name'],
+                'deadline': deadline_value.isoformat() if deadline_value else str(row['deadline']),
+                'category': row['category'],
+                'priorityScore': row['priority_score'],
+            }
+        )
+        formatted_deadline = deadline_value.isoformat() if deadline_value else 'unscheduled'
+        overdue_lines.append(
+            f"- {row['name']} | deadline: {formatted_deadline} | priority: {row['priority_score'] or 0}"
+        )
 
     def _format_task(entry):
         name = entry.get('name', 'Task')
@@ -834,12 +1662,14 @@ def ai_insights():
 
     task_lines = '\n'.join(_format_task(task) for task in tasks_payload) or 'No active tasks provided.'
     block_lines = '\n'.join(_format_block(block) for block in schedule_payload) or 'No scheduled focus blocks.'
+    overdue_section = '\n'.join(overdue_lines) if overdue_lines else 'None from yesterday.'
 
     prompt = (
         "You are a concise productivity coach. Based on the user's tasks and the next focus blocks, "
         "offer one actionable tip (maximum two sentences) that will help them stay productive."
         "\n\nCurrent timestamp: "
-        f"{timestamp}\n\nTasks:\n{task_lines}\n\nUpcoming focus blocks:\n{block_lines}\n"
+        f"{timestamp}\n\nTasks:\n{task_lines}\n\nUpcoming focus blocks:\n{block_lines}"
+        f"\n\nPending tasks from yesterday or earlier:\n{overdue_section}\n"
         "Respond with direct advice only."
     )
 
@@ -854,7 +1684,7 @@ def ai_insights():
     except Exception as exc:  # pragma: no cover - best effort logging
         app.logger.warning('AI insight generation failed: %s', exc)
 
-    return jsonify({'message': suggestion[:500]})
+    return jsonify({'message': suggestion[:500], 'pendingYesterday': overdue_tasks})
 
 # Task Completed
 @app.route('/complete_task', methods=['POST'])
