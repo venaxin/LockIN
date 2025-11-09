@@ -51,7 +51,7 @@
         flex-direction: column;
         flex: 1 1 auto;
         min-height: 0;
-        overflow-y: auto;
+        overflow: hidden;
         gap: 20px;
       }
 
@@ -86,9 +86,15 @@
       }
 
       .sidebar-panel-container {
-        flex: 1;
+        flex: 1 1 auto;
         margin-top: 18px;
         position: relative;
+        overflow-y: auto;
+        padding: 18px;
+        padding-right: 24px;
+        border-radius: 18px;
+        background: rgba(248, 250, 252, 0.9);
+        border: 1px solid rgba(226, 232, 240, 0.8);
       }
 
       .sidebar-tab-panel {
@@ -101,11 +107,11 @@
         display: flex;
       }
 
-      .sidebar::-webkit-scrollbar {
+      .sidebar-panel-container::-webkit-scrollbar {
         width: 6px;
       }
 
-      .sidebar::-webkit-scrollbar-thumb {
+      .sidebar-panel-container::-webkit-scrollbar-thumb {
         background: rgba(102, 126, 234, 0.35);
         border-radius: 999px;
       }
@@ -414,71 +420,22 @@
         height: 100%;
         width: 0;
         background: #48bb78;
-        transition: width 0.3s ease;
+        transition: width 0.3s ease, background 0.3s ease;
       }
 
-      .productivity-meter.state-low {
-        border-color: #fc8181;
-        background: #fff5f5;
-      }
-
-      .productivity-meter.state-low .productivity-score {
-        color: #c53030;
-      }
-
-      .productivity-meter.state-low .productivity-bar-fill {
+      .productivity-bar-fill.state-low {
         background: #e53e3e;
       }
 
-      .productivity-meter.state-low .productivity-message {
-        color: #c53030;
-      }
-
-      .productivity-meter.state-mid {
-        border-color: #f6e05e;
-        background: #fffff0;
-      }
-
-      .productivity-meter.state-mid .productivity-score {
-        color: #975a16;
-      }
-
-      .productivity-meter.state-mid .productivity-bar-fill {
+      .productivity-bar-fill.state-mid {
         background: linear-gradient(90deg, #f6ad55, #68d391);
       }
 
-      .productivity-meter.state-mid .productivity-message {
-        color: #975a16;
-      }
-
-      .productivity-meter.state-high {
-        border-color: #68d391;
-        background: #f0fff4;
-      }
-
-      .productivity-meter.state-high .productivity-score {
-        color: #276749;
-      }
-
-      .productivity-meter.state-high .productivity-bar-fill {
+      .productivity-bar-fill.state-high {
         background: #38a169;
       }
 
-      .productivity-meter.state-high .productivity-message {
-        color: #276749;
-      }
-
-      .productivity-meter.state-none {
-        border-color: #cbd5f5;
-        background: #f7fafc;
-      }
-
-      .productivity-meter.state-none .productivity-score,
-      .productivity-meter.state-none .productivity-message {
-        color: #4a5568;
-      }
-
-      .productivity-meter.state-none .productivity-bar-fill {
+      .productivity-bar-fill.state-none {
         background: #a0aec0;
       }
 
@@ -1775,7 +1732,7 @@
             />
           </div>
         </header>
-        <div class="productivity-meter state-mid" id="productivityMeter">
+        <div class="productivity-meter" id="productivityMeter">
           <div class="productivity-mini-top">
             <span class="productivity-label">Today's Focus</span>
             <span class="productivity-score" id="productivityScore">--/10</span>
@@ -1889,10 +1846,6 @@
                 <div class="floating-task-actions" style="margin-top: 20px">
                   <button class="btn" type="submit">Schedule It</button>
                 </div>
-                <p style="color: #64748b; font-size: 0.85rem; margin-top: 12px">
-                  Need the full planner? Tap the floating + button for advanced
-                  options.
-                </p>
               </form>
             </div>
             <div
@@ -2095,80 +2048,6 @@
             Imported Google Events
           </a>
         </nav>
-      </div>
-    </div>
-
-    <div class="floating-task-entry" id="floatingTaskEntry">
-      <button
-        type="button"
-        class="floating-task-button"
-        id="floatingTaskButton"
-        aria-label="Add new task"
-        aria-expanded="false"
-        aria-controls="floatingTaskPanel"
-      >
-        +
-      </button>
-      <div
-        class="floating-task-panel"
-        id="floatingTaskPanel"
-        role="dialog"
-        aria-labelledby="floatingTaskTitle"
-        aria-hidden="true"
-      >
-        <div class="floating-task-header">
-          <h3 id="floatingTaskTitle">Add New Task</h3>
-          <button
-            type="button"
-            class="floating-task-close"
-            id="floatingTaskCloseBtn"
-            aria-label="Close add task form"
-          >
-            &times;
-          </button>
-        </div>
-        <form
-          class="floating-task-form"
-          id="floatingTaskForm"
-          onsubmit="submitFloatingTaskForm(event)"
-        >
-          <div class="form-group">
-            <label for="taskName">Task Name</label>
-            <input
-              type="text"
-              id="taskName"
-              placeholder="e.g., Complete project proposal"
-            />
-          </div>
-          <div class="form-group">
-            <label for="deadline">Deadline</label>
-            <input type="datetime-local" id="deadline" />
-          </div>
-          <div class="form-group">
-            <label for="daysRequired">Days Required</label>
-            <input type="number" id="daysRequired" min="1" value="1" />
-          </div>
-          <div class="form-group">
-            <label for="dailyHours">Daily Hours</label>
-            <input
-              type="number"
-              id="dailyHours"
-              min="0.5"
-              step="0.5"
-              value="2"
-            />
-          </div>
-          <div class="floating-task-actions">
-            <button class="btn" type="submit">Add Task</button>
-            <button
-              class="btn btn-secondary"
-              type="button"
-              id="floatingTaskCancel"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
       </div>
     </div>
 
@@ -5561,6 +5440,12 @@
         const messageNode = document.getElementById("productivityMessage");
         const barNode = document.getElementById("productivityBar");
         const botNode = document.getElementById("productivityBot");
+        const BAR_STATES = [
+          "state-low",
+          "state-mid",
+          "state-high",
+          "state-none",
+        ];
 
         if (!meter || !scoreNode || !messageNode || !barNode || !botNode) {
           return;
@@ -5582,13 +5467,8 @@
           const message =
             analyticsProductivity.message || config.message || "Stay focused.";
 
-          meter.classList.remove(
-            "state-low",
-            "state-mid",
-            "state-high",
-            "state-none"
-          );
-          meter.classList.add(`state-${state}`);
+          barNode.classList.remove(...BAR_STATES);
+          barNode.classList.add(`state-${state}`);
 
           scoreNode.textContent = `${normalizedScore.toFixed(1)}/10`;
           messageNode.textContent = message;
@@ -5601,13 +5481,8 @@
         const { score, status } = calculateProductivityScore();
         const config = PRODUCTIVITY_MEDIA[status] || PRODUCTIVITY_MEDIA.mid;
 
-        meter.classList.remove(
-          "state-low",
-          "state-mid",
-          "state-high",
-          "state-none"
-        );
-        meter.classList.add(`state-${status}`);
+        barNode.classList.remove(...BAR_STATES);
+        barNode.classList.add(`state-${status}`);
 
         scoreNode.textContent = `${score}/10`;
         messageNode.textContent = config.message;
