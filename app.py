@@ -71,20 +71,127 @@ def ensure_google_identity(credentials) -> str | None:
 # Database setup
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 conn.execute('PRAGMA foreign_keys = ON')
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS tasks
-             (id INTEGER PRIMARY KEY, name TEXT, deadline DATE, days_req INTEGER, hours_daily INTEGER,
-              user_id TEXT, completed BOOLEAN DEFAULT 0, missed INTEGER DEFAULT 0)''')
-c.execute('''CREATE TABLE IF NOT EXISTS schedules
-             (id INTEGER PRIMARY KEY, task_id INTEGER, slot_start DATETIME, slot_end DATETIME, user_id TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS reasons
-             (id INTEGER PRIMARY KEY, schedule_id INTEGER, reason TEXT, timestamp DATETIME)''')
-c.execute('''CREATE TABLE IF NOT EXISTS feedback
-             (id INTEGER PRIMARY KEY, task_id INTEGER, extra_time_needed INTEGER, timestamp DATETIME)''')
+# c = conn.cursor()
+# c.execute('''CREATE TABLE IF NOT EXISTS tasks
+#              (id INTEGER PRIMARY KEY, name TEXT, deadline DATE, days_req INTEGER, hours_daily INTEGER,
+#               user_id TEXT, completed BOOLEAN DEFAULT 0, missed INTEGER DEFAULT 0)''')
+# c.execute('''CREATE TABLE IF NOT EXISTS schedules
+#              (id INTEGER PRIMARY KEY, task_id INTEGER, slot_start DATETIME, slot_end DATETIME, user_id TEXT)''')
+# c.execute('''CREATE TABLE IF NOT EXISTS reasons
+#              (id INTEGER PRIMARY KEY, schedule_id INTEGER, reason TEXT, timestamp DATETIME)''')
+# c.execute('''CREATE TABLE IF NOT EXISTS feedback
+#              (id INTEGER PRIMARY KEY, task_id INTEGER, extra_time_needed INTEGER, timestamp DATETIME)''')
+
+# c.execute('''CREATE TABLE IF NOT EXISTS today_tasks
+#              (id INTEGER PRIMARY KEY,
+#               user_id TEXT NOT NULL,
+#               task_id INTEGER NOT NULL,
+#               added_date DATE NOT NULL,
+#               FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+#               UNIQUE(user_id, task_id, added_date))''')
+
 conn.commit()
 
+def init_db():
+    c = conn.cursor() # <-- This function gets its OWN cursor
+    c.execute('''CREATE TABLE IF NOT EXISTS tasks
+                 (id INTEGER PRIMARY KEY, name TEXT, deadline DATE, days_req INTEGER, hours_daily INTEGER,
+                  user_id TEXT, completed BOOLEAN DEFAULT 0, missed INTEGER DEFAULT 0)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS schedules
+                 (id INTEGER PRIMARY KEY, task_id INTEGER, slot_start DATETIME, slot_end DATETIME, user_id TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS reasons
+                 (id INTEGER PRIMARY KEY, schedule_id INTEGER, reason TEXT, timestamp DATETIME)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS feedback
+                 (id INTEGER PRIMARY KEY, task_id INTEGER, extra_time_needed INTEGER, timestamp DATETIME)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS today_tasks
+                 (id INTEGER PRIMARY KEY,
+                  user_id TEXT NOT NULL,
+                  task_id INTEGER NOT NULL,
+                  added_date DATE NOT NULL,
+                  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                  UNIQUE(user_id, task_id, added_date))''')
+    conn.commit()
+
+
+@app.route('/today_tasks')
+def get_today_tasks():
+    user_id = current_user_id()
+    today_str = datetime.date.today().isoformat()
+    c = conn.cursor()
+    # 2. ADD This query to get today's tasks
+    c.execute(
+        """
+        SELECT t.id, t.name, t.status, t.priority_score, t.estimated_minutes, t.actual_minutes
+        FROM tasks t
+        JOIN today_tasks tt ON t.id = tt.task_id
+        WHERE tt.user_id = ? AND tt.added_date = ?
+        ORDER BY t.priority_score DESC
+        """,
+        (user_id, today_str)
+    )
+    tasks = [{
+        'id': row[0],
+        'name': row[1],
+        'status': row[2],
+        'priorityScore': row[3],
+        'estimatedMinutes': row[4],
+        'actualMinutes': row[5],
+    } for row in c.fetchall()]
+    
+    return jsonify(tasks)
+
+@app.route('/today_tasks', methods=['POST'])
+def add_to_today():
+    data = request.json
+    task_id = data.get('task_id')
+    user_id = current_user_id()
+    today_str = datetime.date.today().isoformat()
+    c = conn.cursor()
+    if not task_id:
+        return jsonify({'error': 'task_id is required'}), 400
+        
+    try:
+        # 3. ADD This insert logic
+        c.execute(
+            """
+            INSERT INTO today_tasks (user_id, task_id, added_date)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, task_id, today_str)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # Task is already on the list for today, which is fine
+        pass
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    return jsonify({'status': 'added', 'task_id': task_id})
+
+@app.route('/today_tasks/<int:task_id>', methods=['DELETE'])
+def remove_from_today(task_id):
+    user_id = current_user_id()
+    today_str = datetime.date.today().isoformat()
+    c = conn.cursor()
+    try:
+        # 4. ADD This delete logic
+        c.execute(
+            """
+            DELETE FROM today_tasks
+            WHERE user_id = ? AND task_id = ? AND added_date = ?
+            """,
+            (user_id, task_id, today_str)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    return jsonify({'status': 'removed', 'task_id': task_id})
 
 def column_exists(table: str, column: str) -> bool:
+    c = conn.cursor()
     c.execute(f"PRAGMA table_info({table})")
     return any(row[1] == column for row in c.fetchall())
 
@@ -144,6 +251,7 @@ def compute_priority_score(deadline_value, status, missed, estimated_minutes, ac
 
 
 def recompute_task_priority(task_id: int) -> None:
+    c = conn.cursor()
     c.execute(
         """
         SELECT deadline, status, missed, estimated_minutes, actual_minutes,
@@ -200,7 +308,7 @@ def record_task_activity(task_id: int, minutes: int = 0, status: Optional[str] =
     updates.append("last_activity_at = ?")
     params.append(activity_time)
     params.append(task_id)
-
+    c = conn.cursor()
     if updates:
         c.execute(
             f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?",
@@ -218,7 +326,7 @@ def upgrade_schema() -> None:
         'priority_score': 'REAL DEFAULT 0',
         'last_activity_at': 'DATETIME',
     }
-
+    c = conn.cursor()   
     for column, definition in new_columns.items():
         if not column_exists('tasks', column):
             c.execute(f"ALTER TABLE tasks ADD COLUMN {column} {definition}")
@@ -281,14 +389,14 @@ def upgrade_schema() -> None:
 
     conn.commit()
 
-
+init_db()
 upgrade_schema()
 
 
 def seed_mock_data(user_id: str) -> None:
     if not user_id.startswith('google:'):
         return
-
+    c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM tasks WHERE user_id=?", (user_id,))
     if c.fetchone()[0] > 0:
         return
@@ -386,6 +494,7 @@ def oauth_redirect_uri():
 
 @app.route('/')
 def index():
+    c = conn.cursor()
     calendar_api_key = os.getenv('CALENDAR_API_KEY')
     if not calendar_api_key:
         app.logger.warning('CALENDAR_API_KEY not set; Google Calendar API calls will fail.')
@@ -451,6 +560,7 @@ def check_auth():
 # Manual Task Input
 @app.route('/add_task', methods=['POST'])
 def add_task():
+    c = conn.cursor()
     data = request.json
     name = data['name']
     deadline = parse(data['deadline']).date()
@@ -522,6 +632,7 @@ def get_gapi_token():
 # User selects slots
 @app.route('/add_slots', methods=['POST'])
 def add_slots():
+    c = conn.cursor()
     data = request.json
     task_id = data['task_id']
     selected_slots = data['slots']  # list of {'start': iso, 'end': iso}
@@ -545,6 +656,7 @@ def add_slots():
     return jsonify({'status': 'added'})
 
 def get_task_name(task_id):
+    c = conn.cursor()
     c.execute("SELECT name FROM tasks WHERE id=?", (task_id,))
     return c.fetchone()[0]
 
@@ -552,6 +664,7 @@ def get_task_name(task_id):
 @app.route('/get_priorities')
 def get_priorities():
     user_id = current_user_id()
+    c = conn.cursor()
     c.execute(
         """
         SELECT id, name, deadline, missed, category, status,
@@ -593,6 +706,7 @@ def get_priorities():
 # Analyze user list (simple: count tasks, avg time)
 @app.route('/analyze_list')
 def analyze_list():
+    c = conn.cursor()
     user_id = current_user_id()
     c.execute("SELECT COUNT(*), AVG(hours_daily) FROM tasks WHERE user_id=?", (user_id,))
     count, avg_hours = c.fetchone()
@@ -603,7 +717,7 @@ def analyze_list():
 def priority_overview():
     user_id = current_user_id()
     generated_at = datetime.datetime.now().isoformat()
-
+    c = conn.cursor()
     c.execute(
         """
         SELECT id, name, deadline, status, category, estimated_minutes,
@@ -683,6 +797,7 @@ def priority_overview():
 # Detect pattern / Procrastination
 @app.route('/detect_procrastination')
 def detect_procrastination():
+    c = conn.cursor()
     user_id = current_user_id()
     c.execute("SELECT missed FROM tasks WHERE user_id=?", (user_id,))
     misses = [row[0] for row in c.fetchall()]
@@ -698,6 +813,7 @@ def detect_procrastination():
 # Daily Check
 @app.route('/daily_check')
 def daily_check():
+    c = conn.cursor()
     user_id = current_user_id()
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
     # Missed slots
@@ -710,6 +826,7 @@ def daily_check():
 
 @app.route('/submit_reason', methods=['POST'])
 def submit_reason():
+    c = conn.cursor()
     data = request.json
     schedule_id = data['schedule_id']
     reason = data['reason']
@@ -722,6 +839,7 @@ def submit_reason():
 
 @app.route('/submit_feedback', methods=['POST'])
 def submit_feedback():
+    c = conn.cursor()
     data = request.json
     task_id = data['task_id']
     extra_time = int(data['extra_time'])
@@ -743,6 +861,7 @@ def submit_feedback():
 
 @app.route('/log_session', methods=['POST'])
 def log_session():
+    c = conn.cursor()
     payload = request.get_json(silent=True) or {}
     task_id = payload.get('task_id')
     if not task_id:
@@ -803,8 +922,8 @@ def log_session():
     return jsonify({'status': 'logged', 'duration_minutes': duration})
 
 
-@app.route('/ai_insights', methods=['POST'])
-def ai_insights():
+# @app.route('/ai_insights', methods=['POST'])
+# def ai_insights():
     payload = request.get_json(silent=True) or {}
     tasks_payload = payload.get('tasks') or []
     schedule_payload = payload.get('schedule') or []
@@ -856,9 +975,67 @@ def ai_insights():
 
     return jsonify({'message': suggestion[:500]})
 
+@app.route('/ai_today_suggestion')
+def ai_today_suggestion():
+    c = conn.cursor()
+    user_id = current_user_id()
+    today_str = datetime.date.today().isoformat()
+
+    # Get all high-priority tasks
+    c.execute(
+        """
+        SELECT id, name, priority_score, status, missed
+        FROM tasks
+        WHERE user_id=? AND completed=0
+        ORDER BY priority_score DESC
+        LIMIT 5
+        """,
+        (user_id,),
+    )
+    top_tasks = c.fetchall()
+
+    if not top_tasks:
+        return jsonify({'message': 'Your task list is empty. Add a task to get started!'})
+
+    # Get tasks *already* on today's list
+    c.execute(
+        "SELECT task_id FROM today_tasks WHERE user_id=? AND added_date=?",
+        (user_id, today_str)
+    )
+    today_task_ids = {row[0] for row in c.fetchall()}
+
+    # Find the highest priority task *not* on today's list
+    suggestion = None
+    for task in top_tasks:
+        task_id, name, score, status, missed = task
+        if task_id not in today_task_ids:
+            suggestion_task = {'id': task_id, 'name': name}
+            
+            # Generate a smart reason
+            if score > 100: # Overdue
+                reason = f"This is **overdue** and your highest priority."
+            elif missed > 0:
+                reason = f"You've procrastinated on this {missed} time(s). Let's tackle it!"
+            elif status == 'at_risk':
+                reason = "This task is at risk. Let's get it back on track."
+            else:
+                reason = "This is your next most important task."
+                
+            suggestion = {
+                'message': f"Add **{name}** to your plan. {reason}",
+                'taskToSuggest': suggestion_task
+            }
+            break
+
+    if not suggestion:
+        suggestion = {'message': "Your plan looks good! You've added your top priorities. Ready to start?"}
+
+    return jsonify(suggestion)
+
 # Task Completed
 @app.route('/complete_task', methods=['POST'])
 def complete_task():
+    c = conn.cursor()
     data = request.json
     task_id = data['task_id']
     c.execute(
