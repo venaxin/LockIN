@@ -50,8 +50,54 @@ app = Flask(
 
 logger = app.logger
 
-app.secret_key = os.urandom(24)          # random secret for session
+
+def _load_google_credentials_from_env() -> Optional[Dict[str, Any]]:
+    raw_value = os.getenv('GOOGLE_CREDENTIALS_JSON')
+    if not raw_value:
+        return None
+    try:
+        # Some platforms double-encode JSON strings; decode twice if necessary
+        payload = json.loads(raw_value)
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if isinstance(payload, dict):
+            return payload
+        logger.warning('GOOGLE_CREDENTIALS_JSON is not a dict payload; ignoring.')
+    except json.JSONDecodeError as exc:
+        logger.warning('Failed to parse GOOGLE_CREDENTIALS_JSON: %s', exc)
+    return None
+
+
+GOOGLE_CREDENTIALS_INFO = _load_google_credentials_from_env()
+
+
+def _extract_google_client_id(credentials: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not credentials:
+        return None
+    if 'installed' in credentials and isinstance(credentials['installed'], dict):
+        return credentials['installed'].get('client_id')
+    if 'web' in credentials and isinstance(credentials['web'], dict):
+        return credentials['web'].get('client_id')
+    if isinstance(credentials, dict):
+        return credentials.get('client_id')
+    return None
+
+
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID') or _extract_google_client_id(GOOGLE_CREDENTIALS_INFO)
+
+
 CREDENTIALS_FILE = 'credentials.json'
+
+
+def create_oauth_flow() -> InstalledAppFlow:
+    if GOOGLE_CREDENTIALS_INFO:
+        return InstalledAppFlow.from_client_config(GOOGLE_CREDENTIALS_INFO, SCOPES)
+    if not os.path.exists(CREDENTIALS_FILE):
+        logger.warning('credentials.json missing and GOOGLE_CREDENTIALS_JSON not set; OAuth flow may fail.')
+    return InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+
+
+app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 SCOPES = [
     'https://www.googleapis.com/auth/calendar',
     'openid',
@@ -689,7 +735,7 @@ def _render_index(page_name: str):
     ensure_history_backfill(user_id)
     return render_template(
         'index.html',
-        google_client_id=os.getenv('GOOGLE_CLIENT_ID'),
+        google_client_id=GOOGLE_CLIENT_ID,
         calendar_api_key=calendar_api_key,
         google_scopes='https://www.googleapis.com/auth/calendar',
         user_id=user_id,
@@ -723,7 +769,7 @@ def debug():
     }
 @app.route('/auth')
 def auth():
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+    flow = create_oauth_flow()
     flow.redirect_uri = f"http://{request.host}/oauth2callback"
     auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
     return redirect(auth_url)
@@ -741,7 +787,7 @@ def oauth2callback():
     # ALLOW HTTP FOR LOCAL DEV
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+    flow = create_oauth_flow()
     flow.redirect_uri = f"http://{request.host}/oauth2callback"
     flow.fetch_token(authorization_response=request.url)
     credentials = flow.credentials
