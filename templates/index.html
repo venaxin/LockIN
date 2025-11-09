@@ -288,6 +288,7 @@
         border-radius: 8px;
         background: #ffffff;
         overflow: visible;
+        padding: 0 6px;
       }
 
       .hour-divider {
@@ -300,13 +301,11 @@
 
       .scheduled-task {
         position: absolute;
-        left: 8px;
-        right: 8px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 8px;
+        padding: 6px;
         border-radius: 6px;
-        font-size: 12px;
+        font-size: 11px;
         cursor: pointer;
         z-index: 10;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -314,6 +313,8 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
+        overflow: hidden;
+        line-height: 1.2;
       }
 
       .scheduled-task:hover {
@@ -330,6 +331,16 @@
 
       .scheduled-task.external-event {
         background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+      }
+
+      .scheduled-task .event-title {
+        font-weight: 600;
+        font-size: 12px;
+      }
+
+      .scheduled-task .event-time {
+        font-size: 11px;
+        opacity: 0.85;
       }
 
       .deadline-flag {
@@ -586,6 +597,118 @@
         color: white;
       }
 
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(45, 55, 72, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1200;
+        padding: 20px;
+      }
+
+      .modal-overlay.show {
+        display: flex;
+      }
+
+      .modal-content {
+        background: #ffffff;
+        border-radius: 16px;
+        max-width: 420px;
+        width: 100%;
+        padding: 24px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+        position: relative;
+      }
+
+      .modal-close {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: transparent;
+        border: none;
+        font-size: 20px;
+        color: #4a5568;
+        cursor: pointer;
+      }
+
+      .modal-time {
+        color: #4a5568;
+        margin-top: 8px;
+        font-size: 0.95em;
+      }
+
+      .modal-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .modal-meta div {
+        background: #f7fafc;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 0.85em;
+        color: #2d3748;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .meta-label {
+        font-size: 0.75em;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #718096;
+      }
+
+      .modal-description {
+        margin-top: 18px;
+        color: #4a5568;
+        font-size: 0.95em;
+        line-height: 1.5;
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+        flex-wrap: wrap;
+      }
+
+      .modal-actions button {
+        flex: 1;
+        min-width: 140px;
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .modal-actions button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(102, 126, 234, 0.18);
+      }
+
+      .modal-actions .primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #ffffff;
+      }
+
+      .modal-actions .danger {
+        background: linear-gradient(135deg, #fc8181 0%, #f56565 100%);
+        color: #ffffff;
+      }
+
+      .modal-actions .secondary {
+        background: #edf2f7;
+        color: #2d3748;
+      }
+
       @media (max-width: 768px) {
         .main-grid {
           grid-template-columns: 1fr;
@@ -596,6 +719,10 @@
         }
         .logo {
           height: 100px;
+        }
+
+        .modal-meta {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -733,6 +860,62 @@
       </div>
     </div>
 
+    <div
+      class="modal-overlay"
+      id="eventModal"
+      onclick="handleModalOverlayClick(event)"
+    >
+      <div class="modal-content">
+        <button class="modal-close" onclick="closeEventModal()">&times;</button>
+        <h3 id="modalTitle" style="color: #2d3748; font-size: 1.4em">
+          Scheduled Block
+        </h3>
+        <p class="modal-time" id="modalTime"></p>
+        <div class="modal-meta">
+          <div>
+            <span class="meta-label">Source</span>
+            <span id="modalSource"></span>
+          </div>
+          <div>
+            <span class="meta-label">Status</span>
+            <span id="modalStatus"></span>
+          </div>
+          <div>
+            <span class="meta-label">Duration</span>
+            <span id="modalDuration"></span>
+          </div>
+          <div id="modalLocationRow" style="display: none">
+            <span class="meta-label">Location</span>
+            <span id="modalLocation"></span>
+          </div>
+        </div>
+        <p class="modal-description" id="modalDescription"></p>
+        <div class="modal-actions">
+          <button
+            class="secondary"
+            id="modalCloseBtn"
+            onclick="closeEventModal()"
+          >
+            Close
+          </button>
+          <button
+            class="primary"
+            id="modalStartBtn"
+            onclick="startFocusFromModal()"
+          >
+            Start Focus Session
+          </button>
+          <button
+            class="danger"
+            id="modalDeleteBtn"
+            onclick="deleteScheduleItem()"
+          >
+            Delete Block
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="pomodoro-timer" id="pomodoroTimer" style="display: none">
       <div class="timer-display" id="timerDisplay">25:00</div>
       <div class="timer-label" id="timerLabel">Focus Time</div>
@@ -769,6 +952,10 @@
       // State Management
       let tasks = JSON.parse(localStorage.getItem("tasks") || "[]");
       let schedule = JSON.parse(localStorage.getItem("schedule") || "[]");
+      let dismissedGoogleEvents = new Set(
+        JSON.parse(localStorage.getItem("dismissedGoogleEvents") || "[]")
+      );
+  let activeScheduleId = null;
       let currentTask = null;
       let pomodoroInterval = null;
       let pomodoroTimeLeft = 25 * 60;
@@ -955,8 +1142,8 @@
               id: Date.now() + sessionsScheduled,
               taskId: task.id,
               taskName: task.name,
-              start: new Date(currentDate),
-              end: new Date(currentDate.getTime() + 30 * 60000), // 30 minutes
+              start: new Date(currentDate).toISOString(),
+              end: new Date(currentDate.getTime() + 30 * 60000).toISOString(), // 30 minutes
               type: "pomodoro",
               status: "scheduled",
               productivity: timeSlot.productivity,
@@ -984,8 +1171,8 @@
           id: Date.now() + 999999,
           taskId: task.id,
           taskName: task.name + " (DEADLINE)",
-          start: deadline,
-          end: deadline,
+          start: deadline.toISOString(),
+          end: deadline.toISOString(),
           type: "deadline",
           status: "deadline",
         });
@@ -1307,53 +1494,138 @@
             columnHtml += `<div class="hour-divider" style="top: ${top}px"></div>`;
           });
 
-          const dayEvents = schedule.filter((item) => {
-            if (!item || item.type === "deadline") {
-              return false;
+          const dayEvents = schedule
+            .filter((item) => {
+              if (!item || item.type === "deadline") {
+                return false;
+              }
+              const eventStart = new Date(item.start);
+              const eventEnd = new Date(item.end || item.start);
+              return eventEnd > dayStart && eventStart < dayEnd;
+            })
+            .map((item) => {
+              const eventStart = new Date(item.start);
+              const eventEnd = new Date(item.end || item.start);
+              const rawStart = (eventStart - dayStart) / 60000;
+              const rawEnd = (eventEnd - dayStart) / 60000;
+              const boundedStart = Math.max(0, rawStart);
+              const boundedEnd = Math.min(totalMinutes, rawEnd);
+              if (boundedEnd <= 0 || boundedStart >= totalMinutes) {
+                return null;
+              }
+              const effectiveEnd = Math.max(
+                boundedEnd,
+                boundedStart + 30
+              );
+              return {
+                item,
+                eventStart,
+                eventEnd,
+                startMinutes: boundedStart,
+                endMinutes: Math.min(totalMinutes, effectiveEnd),
+              };
+            })
+            .filter(Boolean)
+            .sort((a, b) => {
+              if (a.startMinutes === b.startMinutes) {
+                return a.endMinutes - b.endMinutes;
+              }
+              return a.startMinutes - b.startMinutes;
+            });
+
+          const clusters = [];
+          let activeCluster = null;
+          dayEvents.forEach((event) => {
+            if (
+              !activeCluster ||
+              event.startMinutes >= activeCluster.maxEnd
+            ) {
+              activeCluster = {
+                events: [],
+                maxEnd: event.endMinutes,
+              };
+              clusters.push(activeCluster);
+            } else {
+              activeCluster.maxEnd = Math.max(
+                activeCluster.maxEnd,
+                event.endMinutes
+              );
             }
-            const eventStart = new Date(item.start);
-            const eventEnd = new Date(item.end || item.start);
-            return eventEnd > dayStart && eventStart < dayEnd;
+            activeCluster.events.push(event);
           });
 
-          dayEvents.forEach((item) => {
-            const eventStart = new Date(item.start);
-            const eventEnd = new Date(item.end || item.start);
-            const startMinutes = Math.max(0, (eventStart - dayStart) / 60000);
-            const endMinutes = Math.min(
-              totalMinutes,
-              (eventEnd - dayStart) / 60000
-            );
-            const clampedDuration = Math.max(endMinutes - startMinutes, 30);
-            if (startMinutes >= totalMinutes || endMinutes <= 0) {
-              return;
-            }
-            const top = (startMinutes / 60) * CALENDAR_SLOT_HEIGHT;
-            const height = (clampedDuration / 60) * CALENDAR_SLOT_HEIGHT;
+          clusters.forEach((cluster) => {
+            const activeEvents = [];
+            cluster.columnCount = 0;
 
-            const statusClass =
-              item.status === "completed"
-                ? "completed"
-                : item.status === "in-progress"
-                ? "in-progress"
-                : "";
-            const isExternal = item.source === "google";
-            const clickHandler = isExternal
-              ? ""
-              : `onclick="handleScheduleClick(${item.id})"`;
-            const timeRange = `${formatCalendarTime(
-              eventStart
-            )} - ${formatCalendarTime(eventEnd)}`;
+            cluster.events.sort((a, b) => {
+              if (a.startMinutes === b.startMinutes) {
+                return a.endMinutes - b.endMinutes;
+              }
+              return a.startMinutes - b.startMinutes;
+            });
 
-            columnHtml += `<div class="scheduled-task ${statusClass}${
-              isExternal ? " external-event" : ""
-            }" style="top: ${top}px; height: ${Math.max(
-              height,
-              32
-            )}px;" ${clickHandler}>
-                <span>${item.taskName}</span>
-                <small>${timeRange}</small>
+            cluster.events.forEach((event) => {
+              for (let i = activeEvents.length - 1; i >= 0; i--) {
+                if (activeEvents[i].endMinutes <= event.startMinutes) {
+                  activeEvents.splice(i, 1);
+                }
+              }
+
+              const usedColumns = activeEvents.map((evt) => evt.column);
+              let columnIndex = 0;
+              while (usedColumns.includes(columnIndex)) {
+                columnIndex++;
+              }
+
+              event.column = columnIndex;
+              activeEvents.push(event);
+              cluster.columnCount = Math.max(
+                cluster.columnCount,
+                columnIndex + 1
+              );
+            });
+
+            cluster.events.forEach((event) => {
+              const columnCount = cluster.columnCount || 1;
+              const top =
+                (event.startMinutes / 60) * CALENDAR_SLOT_HEIGHT;
+              const height = Math.max(
+                ((event.endMinutes - event.startMinutes) / 60) *
+                  CALENDAR_SLOT_HEIGHT,
+                32
+              );
+
+              const columnWidth = Math.round((100 / columnCount) * 1000) / 1000;
+              const leftPercent = Math.round(columnWidth * event.column * 1000) / 1000;
+              const widthStyle =
+                columnCount > 1
+                  ? `calc(${columnWidth}% - 6px)`
+                  : `calc(${columnWidth}% - 2px)`;
+              const leftStyle = `${leftPercent}%`;
+
+              const statusClass =
+                event.item.status === "completed"
+                  ? "completed"
+                  : event.item.status === "in-progress"
+                  ? "in-progress"
+                  : "";
+              const isExternal =
+                event.item.source === "google" ||
+                event.item.type === "external";
+              const timeRange = `${formatCalendarTime(
+                event.eventStart
+              )} - ${formatCalendarTime(event.eventEnd)}`;
+
+              columnHtml += `<div class="scheduled-task ${statusClass}${
+                isExternal ? " external-event" : ""
+              }" style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${event.item.id}')">
+                <span class="event-title">${
+                  event.item.taskName || "Scheduled Block"
+                }</span>
+                <span class="event-time">${timeRange}</span>
               </div>`;
+            });
           });
 
           const dayDeadlines = tasks.filter((task) => {
@@ -1412,17 +1684,158 @@
 
       // Handle click on scheduled item
       function handleScheduleClick(scheduleId) {
-        const item = schedule.find((s) => s.id === scheduleId);
-        if (item && item.status === "scheduled") {
-          const task = tasks.find((t) => t.id === item.taskId);
-          if (task) {
-            startPomodoro(task);
-            item.status = "in-progress";
-            saveSchedule();
-            renderCalendar();
-          }
+        openScheduleModal(String(scheduleId));
+      }
+
+      function openScheduleModal(scheduleId) {
+        const modal = document.getElementById("eventModal");
+        if (!modal) {
+          return;
+        }
+
+        const item = schedule.find(
+          (entry) => String(entry.id) === String(scheduleId)
+        );
+        if (!item) {
+          return;
+        }
+
+        activeScheduleId = item.id;
+
+        const start = new Date(item.start);
+        const end = item.end
+          ? new Date(item.end)
+          : new Date(start.getTime() + 30 * 60 * 1000);
+
+        document.getElementById("modalTitle").textContent =
+          item.taskName || "Scheduled Block";
+        document.getElementById(
+          "modalTime"
+        ).textContent = `${start.toLocaleString()} - ${end.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`;
+
+        document.getElementById("modalSource").textContent =
+          item.source === "google" || item.type === "external"
+            ? "Google Calendar"
+            : "FocusFlow";
+        document.getElementById("modalStatus").textContent =
+          (item.status || "scheduled").replace(/-/g, " ");
+        document.getElementById("modalDuration").textContent = formatDuration(
+          end.getTime() - start.getTime()
+        );
+
+        const locationRow = document.getElementById("modalLocationRow");
+        if (item.location) {
+          locationRow.style.display = "flex";
+          document.getElementById("modalLocation").textContent = item.location;
+        } else {
+          locationRow.style.display = "none";
+        }
+
+        if (item.source === "google" || item.type === "external") {
+          document.getElementById("modalDescription").textContent =
+            "Managed via Google Calendar. Hide it here or update it directly in Google.";
+          document.getElementById("modalStartBtn").style.display = "none";
+          const deleteBtn = document.getElementById("modalDeleteBtn");
+          deleteBtn.style.display = "inline-flex";
+          deleteBtn.textContent = "Hide This Event";
+        } else {
+          const relatedTask = tasks.find((t) => t.id === item.taskId);
+          const priorityInfo =
+            relatedTask && typeof relatedTask.priority === "number"
+              ? ` Priority ${relatedTask.priority}/10.`
+              : "";
+          const description = relatedTask
+            ? `Focus block for "${relatedTask.name}".${priorityInfo}`
+            : "Focus block scheduled via AI.";
+          document.getElementById("modalDescription").textContent = description;
+          document.getElementById("modalStartBtn").style.display = "inline-flex";
+          const deleteBtn = document.getElementById("modalDeleteBtn");
+          deleteBtn.style.display = "inline-flex";
+          deleteBtn.textContent = "Delete Block";
+        }
+
+        modal.classList.add("show");
+      }
+
+      function closeEventModal() {
+        const modal = document.getElementById("eventModal");
+        if (modal) {
+          modal.classList.remove("show");
+        }
+        activeScheduleId = null;
+      }
+
+      function handleModalOverlayClick(event) {
+        if (event.target && event.target.id === "eventModal") {
+          closeEventModal();
         }
       }
+
+      function startFocusFromModal() {
+        if (activeScheduleId === null) {
+          return;
+        }
+        const item = schedule.find(
+          (entry) => String(entry.id) === String(activeScheduleId)
+        );
+        if (!item || !item.taskId) {
+          return;
+        }
+        const task = tasks.find((t) => t.id === item.taskId);
+        if (!task) {
+          return;
+        }
+
+        startPomodoro(task);
+        item.status = "in-progress";
+        saveSchedule();
+        renderCalendar();
+        closeEventModal();
+      }
+
+      function deleteScheduleItem() {
+        if (activeScheduleId === null) {
+          return;
+        }
+        const index = schedule.findIndex(
+          (entry) => String(entry.id) === String(activeScheduleId)
+        );
+        if (index === -1) {
+          closeEventModal();
+          return;
+        }
+
+        const [removed] = schedule.splice(index, 1);
+        if (removed && removed.source === "google" && removed.externalId) {
+          dismissedGoogleEvents.add(removed.externalId);
+          saveDismissedGoogleEvents();
+        }
+        saveSchedule();
+        renderCalendar();
+        closeEventModal();
+      }
+
+      function formatDuration(milliseconds) {
+        const totalMinutes = Math.max(1, Math.round(milliseconds / 60000));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (hours > 0 && minutes > 0) {
+          return `${hours}h ${minutes}m`;
+        }
+        if (hours > 0) {
+          return `${hours}h`;
+        }
+        return `${minutes}m`;
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeEventModal();
+        }
+      });
 
       // Google Calendar Integration
       function loadGoogleAPI() {
@@ -1578,9 +1991,9 @@
           return;
         }
 
-        const normalizedEvents = events.filter(
-          (event) => event && event.id && event.start
-        );
+        const normalizedEvents = events
+          .filter((event) => event && event.id && event.start)
+          .filter((event) => !dismissedGoogleEvents.has(event.id));
         const incomingIds = new Set(normalizedEvents.map((event) => event.id));
 
         schedule = schedule.filter((item) => {
@@ -1620,8 +2033,8 @@
             source: "google",
             taskId: null,
             taskName: `${event.summary || "Google Event"}`,
-            start: startDate,
-            end: endDate,
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
             type: "external",
             status: "scheduled",
             location: event.location || "",
@@ -1750,6 +2163,13 @@
 
       function saveSchedule() {
         localStorage.setItem("schedule", JSON.stringify(schedule));
+      }
+
+      function saveDismissedGoogleEvents() {
+        localStorage.setItem(
+          "dismissedGoogleEvents",
+          JSON.stringify(Array.from(dismissedGoogleEvents))
+        );
       }
 
       // // Request notification permission

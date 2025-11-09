@@ -1,0 +1,60 @@
+To-do List:
+
+
+Inputs:
+
+User will integrate google calender. (this can work with OAuth thing)
+
+Or
+
+User can input the deadlines/tasks, rough amount of time user thinks might take.
+AI will suggest some buffer time for revision.
+
+
+Features:
+
+AI will tell us the upcoming deadlines and the priorities of tasks.
+
+User can select the items from the AI List and add on top of it.
+
+Then AI will analyze the user list.
+
+At the end of the day or whenever User will edit the list, AI will detect the pattern.
+
+And then it will tell the user that he/she is procrastinating.
+
+Airhorn or maybe start locking apps or something.
+
+
+1. Add a Task 
+1st a form with 1 field assignment/task name , 2nd field deadline date, 3rd input days req to complete task 4th input rough hours it takes daily or you can give daily to the task
+
+
+
+AI will keep track of schedule and suggest some productive time slots in a pomodoro manner to complete the most prioritised task and then the user has to select the tasks from the (if any) list of suggested timeslot tasks. And then it will be added to the scedule
+
+
+2. Tracking Progress
+
+As soon as the time arrives for the slot we give a notification asking if hes ready to work on his task in the slot or if he wants to swap with any other task slot in the day and every 20 minutes a checkin if hes doing the work or not and for every not doing work we ask a suggested list of reason for not doing it. Or he can just decline or accept.
+
+And also should we have a questionnaire 
+
+
+3. Daily Check
+
+If he missed working in a given slot and missed from yesterday he will be notified first for those slots to schedule them again to work on them. 
+We can ask a reason why he missed it we cna make it easy by giving a predeifined set of options to select and store this data for later
+
+
+If he did work on some task yesterday he will also get a feedback question asking him if hes gonna need more time to do the task. And give another form to add slots like   
+
+
+4. Task Completed
+
+As we already have a 20 min check and the end slot check we can ask the user if the task was completed. This also covers the case where he did it in a much faster time than was allotted so in that case AI will adjust the remaining days slots accordingly.  
+
+
+For adding a task we will have UI drag drop slots on to a week view calendar.
+
+

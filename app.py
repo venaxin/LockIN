@@ -10,6 +10,7 @@ from dateutil.parser import parse
 import google.generativeai as genai
 
 import os
+from uuid import uuid4
 
 # Force correct paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -25,6 +26,12 @@ CREDENTIALS_FILE = 'credentials.json'
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+
+
+@app.before_request
+def ensure_user_id():
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid4())
 
 
 # Database setup
