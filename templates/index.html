@@ -78,6 +78,148 @@
         gap: 10px;
       }
 
+      .header-productivity {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .productivity-meter {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        border-radius: 14px;
+        background: #ffffff;
+        border: 2px solid transparent;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+        min-width: 220px;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .productivity-bot {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+      }
+
+      .productivity-bot img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .productivity-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .productivity-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #4a5568;
+      }
+
+      .productivity-score {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1a202c;
+      }
+
+      .productivity-message {
+        font-size: 12px;
+        color: #4a5568;
+        font-weight: 500;
+        font-style: italic;
+      }
+
+      .productivity-bar {
+        width: 100%;
+        height: 6px;
+        background: #edf2f7;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+
+      .productivity-bar-fill {
+        height: 100%;
+        width: 0;
+        background: #48bb78;
+        transition: width 0.3s ease;
+      }
+
+      .productivity-meter.state-low {
+        border-color: #fc8181;
+        background: #fff5f5;
+      }
+
+      .productivity-meter.state-low .productivity-score {
+        color: #c53030;
+      }
+
+      .productivity-meter.state-low .productivity-bar-fill {
+        background: #e53e3e;
+      }
+
+      .productivity-meter.state-low .productivity-message {
+        color: #c53030;
+      }
+
+      .productivity-meter.state-mid {
+        border-color: #f6e05e;
+        background: #fffff0;
+      }
+
+      .productivity-meter.state-mid .productivity-score {
+        color: #975a16;
+      }
+
+      .productivity-meter.state-mid .productivity-bar-fill {
+        background: linear-gradient(90deg, #f6ad55, #68d391);
+      }
+
+      .productivity-meter.state-mid .productivity-message {
+        color: #975a16;
+      }
+
+      .productivity-meter.state-high {
+        border-color: #68d391;
+        background: #f0fff4;
+      }
+
+      .productivity-meter.state-high .productivity-score {
+        color: #276749;
+      }
+
+      .productivity-meter.state-high .productivity-bar-fill {
+        background: #38a169;
+      }
+
+      .productivity-meter.state-high .productivity-message {
+        color: #276749;
+      }
+
+      .productivity-meter.state-none {
+        border-color: #cbd5f5;
+        background: #f7fafc;
+      }
+
+      .productivity-meter.state-none .productivity-score,
+      .productivity-meter.state-none .productivity-message {
+        color: #4a5568;
+      }
+
+      .productivity-meter.state-none .productivity-bar-fill {
+        background: #a0aec0;
+      }
+
       .header-actions .header-google-btn {
         padding: 8px 16px;
         font-size: 0.9em;
@@ -361,6 +503,41 @@
         border-top: 1px solid #f0f0f0;
       }
 
+      .current-time-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: #f6e05e;
+        box-shadow: 0 0 6px rgba(246, 224, 94, 0.6);
+        z-index: 15;
+      }
+
+      .current-time-line::before {
+        content: "";
+        position: absolute;
+        left: -6px;
+        top: -4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #d69e2e;
+        box-shadow: 0 0 8px rgba(214, 158, 46, 0.7);
+      }
+
+      .current-time-label {
+        position: absolute;
+        right: 4px;
+        top: -12px;
+        background: #fefcbf;
+        color: #744210;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        box-shadow: 0 2px 6px rgba(148, 88, 10, 0.2);
+        font-weight: 600;
+      }
+
       .scheduled-task {
         position: absolute;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -398,6 +575,11 @@
 
       .scheduled-task.completed {
         background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+      }
+
+      .scheduled-task.missed {
+        background: linear-gradient(135deg, #fc8181 0%, #e53e3e 100%);
+        box-shadow: 0 0 12px rgba(229, 62, 62, 0.45);
       }
 
       .scheduled-task.external-event {
@@ -876,6 +1058,23 @@
           height: 100px;
         }
 
+        .header-productivity {
+          position: static;
+          align-items: center;
+          width: 100%;
+          margin-bottom: 10px;
+        }
+
+        .productivity-meter {
+          width: 100%;
+          justify-content: center;
+        }
+
+        .productivity-info {
+          align-items: center;
+          text-align: center;
+        }
+
         .header-actions {
           position: static;
           justify-content: flex-end;
@@ -894,6 +1093,29 @@
   >
     <div class="container">
       <div class="header">
+        <div class="header-productivity">
+          <div class="productivity-meter state-mid" id="productivityMeter">
+            <div class="productivity-bot">
+              <img
+                id="productivityBot"
+                src="{{ url_for('static', filename='images/Bot_happy.png') }}"
+                alt="Productivity bot cheering"
+              />
+            </div>
+            <div class="productivity-info">
+              <span class="productivity-label">Today's Focus</span>
+              <span class="productivity-score" id="productivityScore"
+                >--/10</span
+              >
+              <span class="productivity-message" id="productivityMessage">
+                Dialing in your momentum...
+              </span>
+              <div class="productivity-bar">
+                <div class="productivity-bar-fill" id="productivityBar"></div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="header-actions">
           <button class="google-btn header-google-btn" id="googleAuthButton">
             Connect Google Calendar
@@ -1218,6 +1440,28 @@
         { startHour: 14, endHour: 16, productivity: 1.0 },
         { startHour: 19, endHour: 21, productivity: 0.8 },
       ];
+      const PRODUCTIVITY_MEDIA = {
+        low: {
+          bot: "{{ url_for('static', filename='images/Bot_sad.png') }}",
+          message: "You're procrastinating - let's reclaim the day.",
+          alt: "Focus bot looking concerned",
+        },
+        mid: {
+          bot: "{{ url_for('static', filename='images/Bot_happy.png') }}",
+          message: "Good going - stay productive and ride the wave!",
+          alt: "Focus bot smiling",
+        },
+        high: {
+          bot: "{{ url_for('static', filename='images/Bot_lockedin.png') }}",
+          message: "Locked In FR - keep that focus laser sharp!",
+          alt: "Focus bot dialed in",
+        },
+        none: {
+          bot: "{{ url_for('static', filename='images/Bot_happy.png') }}",
+          message: "We don't have any tasks today - score stays at 0.",
+          alt: "Focus bot at ease",
+        },
+      };
 
       // Google Calendar API configuration
       const GOOGLE_CLIENT_ID = "{{ google_client_id or '' }}";
@@ -1992,6 +2236,10 @@
         }
         const now = new Date();
         const startOfWeek = new Date(currentWeekStart);
+        const existingScroll = document.getElementById("calendarScroll");
+        const previousScrollTop = existingScroll ? existingScroll.scrollTop : 0;
+        const userAlreadyAdjusted =
+          existingScroll && existingScroll.dataset.userAdjusted === "true";
 
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const hours = Array.from(
@@ -2029,6 +2277,7 @@
           const dayEnd = new Date(dayDate);
           dayEnd.setHours(CALENDAR_DAY_END + 1, 0, 0, 0);
           const totalMinutes = (dayEnd - dayStart) / 60000;
+          const isTodayColumn = dayDate.toDateString() === now.toDateString();
 
           let columnHtml = `<div class="day-column-body" data-day-start="${dayStart.toISOString()}" style="height: ${
             hours.length * CALENDAR_SLOT_HEIGHT
@@ -2038,6 +2287,17 @@
             const top = hourIndex * CALENDAR_SLOT_HEIGHT;
             columnHtml += `<div class="hour-divider" style="top: ${top}px"></div>`;
           });
+
+          if (isTodayColumn && now >= dayStart && now <= dayEnd) {
+            const minutesFromStart =
+              (now.getTime() - dayStart.getTime()) / 60000;
+            const top = (minutesFromStart / 60) * CALENDAR_SLOT_HEIGHT;
+            columnHtml += `<div class="current-time-line" style="top: ${top}px;">
+                <span class="current-time-label">${formatCalendarTime(
+                  now
+                )}</span>
+              </div>`;
+          }
 
           const dayEvents = schedule
             .filter((item) => {
@@ -2159,9 +2419,22 @@
               const isDragEligible =
                 !isExternal &&
                 (!event.item.status || event.item.status === "scheduled");
-              const baseClasses = `scheduled-task ${statusClass}${
-                isExternal ? " external-event" : ""
-              }`;
+              const isMissed =
+                isTodayColumn &&
+                !isExternal &&
+                (!event.item.status || event.item.status === "scheduled") &&
+                now > event.eventStart;
+              const classList = ["scheduled-task"];
+              if (statusClass) {
+                classList.push(statusClass);
+              }
+              if (isExternal) {
+                classList.push("external-event");
+              }
+              if (isMissed) {
+                classList.push("missed");
+              }
+              const combinedClasses = classList.join(" ");
               const dragAttributes = isDragEligible
                 ? ' draggable="true" data-draggable="true"'
                 : "";
@@ -2171,7 +2444,7 @@
                   : "";
               const blockAttrs = `${dragAttributes} data-schedule-id="${event.item.id}" data-start-iso="${event.item.start}"${taskIdAttr}`;
 
-              columnHtml += `<div class="${baseClasses}"${blockAttrs} style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${
+              columnHtml += `<div class="${combinedClasses.trim()}"${blockAttrs} style="top: ${top}px; height: ${height}px; width: ${widthStyle}; left: ${leftStyle};" onclick="openScheduleModal('${
                 event.item.id
               }')">
                 <span class="event-title">${
@@ -2212,9 +2485,20 @@
 
         const scrollWrapper = `<div class="calendar-scroll" id="calendarScroll">${bodyHtml}</div>`;
         container.innerHTML = headerHtml + scrollWrapper;
+        calendarScrollInitialized = false;
+        if (userAlreadyAdjusted) {
+          userAdjustedCalendarScroll = true;
+        }
 
         applyCalendarScrollFocus();
         enableCalendarDragAndDrop();
+
+        const newScrollContainer = document.getElementById("calendarScroll");
+        if (newScrollContainer && userAlreadyAdjusted) {
+          newScrollContainer.scrollTop = previousScrollTop;
+          newScrollContainer.dataset.userAdjusted = "true";
+          userAdjustedCalendarScroll = true;
+        }
 
         const weekEnd = new Date(startOfWeek);
         weekEnd.setDate(startOfWeek.getDate() + 6);
@@ -3000,6 +3284,10 @@
         checkUpcomingFocusBlocks(now);
         checkDeadlineAlerts(now);
         checkMissedTasks(now);
+        updateProductivityMeter();
+        if (!draggedScheduleId) {
+          renderCalendar();
+        }
       }
 
       function checkUpcomingFocusBlocks(now) {
@@ -3263,11 +3551,150 @@
         document.getElementById(
           "completionRate"
         ).textContent = `${completionRate}%`;
+
+        updateProductivityMeter();
+      }
+
+      function calculateProductivityScore(referenceDate = new Date()) {
+        const now =
+          referenceDate instanceof Date
+            ? new Date(referenceDate)
+            : new Date(referenceDate);
+        if (Number.isNaN(now.getTime())) {
+          return { score: 5, status: "mid" };
+        }
+
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        let totalMinutes = 0;
+        let expectedMinutes = 0;
+        let completedMinutes = 0;
+        let earliestSlot = null;
+
+        schedule.forEach((item) => {
+          if (
+            !item ||
+            item.type === "deadline" ||
+            item.source === "google" ||
+            item.type === "external"
+          ) {
+            return;
+          }
+
+          const start = new Date(item.start);
+          if (Number.isNaN(start.getTime())) {
+            return;
+          }
+
+          if (start < startOfDay || start > endOfDay) {
+            return;
+          }
+
+          const end = item.end
+            ? new Date(item.end)
+            : new Date(start.getTime() + FOCUS_SLOT_MS);
+          if (Number.isNaN(end.getTime())) {
+            return;
+          }
+
+          const durationMinutes = Math.max(
+            (end.getTime() - start.getTime()) / 60000,
+            FOCUS_SLOT_MINUTES
+          );
+
+          totalMinutes += durationMinutes;
+          if (start <= now) {
+            expectedMinutes += durationMinutes;
+          }
+
+          if (!earliestSlot || start < earliestSlot) {
+            earliestSlot = start;
+          }
+
+          if (item.status === "completed") {
+            completedMinutes += durationMinutes;
+            return;
+          }
+
+          if (item.status === "in-progress") {
+            const elapsedMs = Math.max(
+              0,
+              Math.min(now.getTime(), end.getTime()) - start.getTime()
+            );
+            const creditMinutes = Math.min(durationMinutes, elapsedMs / 60000);
+            completedMinutes += creditMinutes;
+          }
+        });
+
+        if (totalMinutes === 0) {
+          return { score: 0, status: "none" };
+        }
+
+        let score;
+        if (expectedMinutes === 0) {
+          const baselineRatio =
+            totalMinutes > 0 ? completedMinutes / totalMinutes : 0;
+          score = Math.round(Math.max(0, Math.min(1, baselineRatio)) * 10);
+          score = Math.max(5, Math.min(7, score));
+          if (earliestSlot && earliestSlot > now) {
+            score = Math.max(score, 6);
+          }
+        } else {
+          const ratio = completedMinutes / Math.max(expectedMinutes, 1);
+          score = Math.round(Math.max(0, Math.min(1, ratio)) * 10);
+        }
+
+        score = Math.max(0, Math.min(10, score));
+
+        let status = "mid";
+        if (score <= 4) {
+          status = "low";
+        } else if (score >= 8) {
+          status = "high";
+        }
+
+        return { score, status };
+      }
+
+      function updateProductivityMeter() {
+        const meter = document.getElementById("productivityMeter");
+        const scoreNode = document.getElementById("productivityScore");
+        const messageNode = document.getElementById("productivityMessage");
+        const barNode = document.getElementById("productivityBar");
+        const botNode = document.getElementById("productivityBot");
+
+        if (!meter || !scoreNode || !messageNode || !barNode || !botNode) {
+          return;
+        }
+
+        const { score, status } = calculateProductivityScore();
+        const config = PRODUCTIVITY_MEDIA[status] || PRODUCTIVITY_MEDIA.mid;
+
+        meter.classList.remove(
+          "state-low",
+          "state-mid",
+          "state-high",
+          "state-none"
+        );
+        meter.classList.add(`state-${status}`);
+
+        scoreNode.textContent = `${score}/10`;
+        messageNode.textContent = config.message;
+        barNode.style.width = `${Math.max(
+          0,
+          Math.min(100, (score / 10) * 100)
+        )}%`;
+        botNode.src = config.bot;
+        botNode.alt = config.alt;
       }
 
       // Save functions
       function saveTasks() {
         saveStorage("tasks", tasks);
+        updateProductivityMeter();
       }
 
       function saveSchedule(options = {}) {
@@ -3277,6 +3704,7 @@
         }
         saveStorage("schedule", schedule);
         pruneNotificationCaches();
+        updateProductivityMeter();
       }
 
       function saveDismissedGoogleEvents() {
@@ -3383,6 +3811,7 @@
           init();
         }
         syncNotificationButton();
+        updateProductivityMeter();
       });
 
       window.addEventListener("focus", syncNotificationButton);
