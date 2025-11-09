@@ -26,7 +26,12 @@ app = Flask(
 
 app.secret_key = os.urandom(24)          # random secret for session
 CREDENTIALS_FILE = 'credentials.json'
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+SCOPES = [
+    'https://www.googleapis.com/auth/calendar',
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+]
 
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
@@ -34,7 +39,33 @@ genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 @app.before_request
 def ensure_user_id():
     if 'user_id' not in session:
-        session['user_id'] = str(uuid4())
+        session['user_id'] = f"anon:{uuid4()}"
+
+
+def current_user_id() -> str:
+    return session.get('user_id', 'guest')
+
+
+def ensure_google_identity(credentials) -> str | None:
+    try:
+        oauth_service = build('oauth2', 'v2', credentials=credentials)
+        profile = oauth_service.userinfo().get().execute()
+    except Exception as exc:  # pragma: no cover - network call
+        app.logger.warning('Failed to fetch Google profile: %s', exc)
+        return None
+
+    email = (profile or {}).get('email')
+    if not email:
+        return None
+
+    user_id = f"google:{email.lower()}"
+    session['user_id'] = user_id
+    session['user_profile'] = {
+        'email': email,
+        'name': (profile or {}).get('name'),
+        'picture': (profile or {}).get('picture'),
+    }
+    return user_id
 
 
 # Database setup
@@ -253,6 +284,97 @@ def upgrade_schema() -> None:
 
 upgrade_schema()
 
+
+def seed_mock_data(user_id: str) -> None:
+    if not user_id.startswith('google:'):
+        return
+
+    c.execute("SELECT COUNT(*) FROM tasks WHERE user_id=?", (user_id,))
+    if c.fetchone()[0] > 0:
+        return
+
+    now = datetime.datetime.now()
+    sample_tasks = [
+        {
+            'name': 'Deep Work: Product Strategy',
+            'deadline': (now + datetime.timedelta(days=3)).date(),
+            'days_req': 2,
+            'hours_daily': 3,
+            'category': 'strategy',
+        },
+        {
+            'name': 'Team Sync Preparation',
+            'deadline': (now + datetime.timedelta(days=1)).date(),
+            'days_req': 1,
+            'hours_daily': 2,
+            'category': 'collaboration',
+        },
+        {
+            'name': 'Prototype QA Pass',
+            'deadline': (now + datetime.timedelta(days=5)).date(),
+            'days_req': 3,
+            'hours_daily': 1,
+            'category': 'quality',
+        },
+    ]
+
+    for entry in sample_tasks:
+        c.execute(
+            """
+            INSERT INTO tasks (name, deadline, days_req, hours_daily, user_id, category, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry['name'],
+                entry['deadline'],
+                entry['days_req'],
+                entry['hours_daily'],
+                user_id,
+                entry['category'],
+                'planned',
+            ),
+        )
+        task_id = c.lastrowid
+        c.execute(
+            "UPDATE tasks SET estimated_minutes = ?, missed = 0 WHERE id=?",
+            (entry['days_req'] * entry['hours_daily'] * 60, task_id),
+        )
+        recompute_task_priority(task_id)
+
+        start_base = datetime.datetime.combine(now.date(), datetime.time(9, 0))
+        slot_start = start_base + datetime.timedelta(hours=random.randint(0, 4))
+        slot_end = slot_start + datetime.timedelta(hours=entry['hours_daily'])
+        c.execute(
+            """
+            INSERT INTO schedules (task_id, slot_start, slot_end, user_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                slot_start,
+                slot_end,
+                user_id,
+            ),
+        )
+        c.execute(
+            """
+            INSERT INTO task_sessions (task_id, started_at, ended_at, duration_minutes, intensity, notes, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                slot_start,
+                slot_end,
+                entry['hours_daily'] * 60,
+                'moderate',
+                'Sample focus block seeded for demo.',
+                user_id,
+            ),
+        )
+        record_task_activity(task_id, minutes=entry['hours_daily'] * 60)
+
+    conn.commit()
+
 def get_calendar_service():
     if 'credentials' not in session:
         return None
@@ -267,11 +389,18 @@ def index():
     calendar_api_key = os.getenv('CALENDAR_API_KEY')
     if not calendar_api_key:
         app.logger.warning('CALENDAR_API_KEY not set; Google Calendar API calls will fail.')
+    user_id = current_user_id()
+    if user_id.startswith('google:'):
+        c.execute('SELECT COUNT(*) FROM tasks WHERE user_id=?', (user_id,))
+        if (c.fetchone() or (0,))[0] == 0:
+            seed_mock_data(user_id)
     return render_template(
         'index.html',
         google_client_id=os.getenv('GOOGLE_CLIENT_ID'),
         calendar_api_key=calendar_api_key,
-        google_scopes='https://www.googleapis.com/auth/calendar'
+        google_scopes='https://www.googleapis.com/auth/calendar',
+        user_id=user_id,
+        user_profile=session.get('user_profile', {}),
     )
     
 @app.route('/debug')
@@ -294,6 +423,8 @@ def auth():
 @app.route('/logout', methods=['POST'])
 def logout():
     session.pop('credentials', None)
+    session.pop('user_profile', None)
+    session['user_id'] = f"anon:{uuid4()}"
     return jsonify({'status': 'logged_out'})
 
 @app.route('/oauth2callback')
@@ -304,7 +435,10 @@ def oauth2callback():
     flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
     flow.redirect_uri = f"http://{request.host}/oauth2callback"
     flow.fetch_token(authorization_response=request.url)
-    session['credentials'] = pickle.dumps(flow.credentials)
+    credentials = flow.credentials
+    session['credentials'] = pickle.dumps(credentials)
+    user_id = ensure_google_identity(credentials) or current_user_id()
+    seed_mock_data(user_id)
     return redirect(url_for('index'))
 
 @app.route('/check_auth')
@@ -322,7 +456,7 @@ def add_task():
     deadline = parse(data['deadline']).date()
     days_req = int(data['days_req'])
     hours_daily = int(data['hours_daily'])
-    user_id = session.get('user_id', 'default')  # Simulate user
+    user_id = current_user_id()
 
     model = genai.GenerativeModel('gemini-1.5-flash')  # Or 'gemini-1.5-pro' for more advanced
     prompt = f"Suggest a buffer time in days for task '{name}' due {deadline} that takes {days_req} days and {hours_daily} hours daily. Also suggest Pomodoro slots."
@@ -391,7 +525,7 @@ def add_slots():
     data = request.json
     task_id = data['task_id']
     selected_slots = data['slots']  # list of {'start': iso, 'end': iso}
-    user_id = session.get('user_id', 'default')
+    user_id = current_user_id()
     for slot in selected_slots:
         start = parse(slot['start'])
         end = parse(slot['end'])
@@ -417,7 +551,7 @@ def get_task_name(task_id):
 # Upcoming deadlines and priorities
 @app.route('/get_priorities')
 def get_priorities():
-    user_id = session.get('user_id', 'default')
+    user_id = current_user_id()
     c.execute(
         """
         SELECT id, name, deadline, missed, category, status,
@@ -456,91 +590,100 @@ def get_priorities():
     items.sort(key=lambda entry: entry.get('priorityScore', 0), reverse=True)
     return jsonify(items)
 
+# Analyze user list (simple: count tasks, avg time)
+@app.route('/analyze_list')
+def analyze_list():
+    user_id = current_user_id()
+    c.execute("SELECT COUNT(*), AVG(hours_daily) FROM tasks WHERE user_id=?", (user_id,))
+    count, avg_hours = c.fetchone()
+    return jsonify({'total_tasks': count, 'avg_daily_hours': avg_hours})
+
+
 @app.route('/priority_overview')
 def priority_overview():
-    user_id = session.get('user_id', 'default')
+    user_id = current_user_id()
+    generated_at = datetime.datetime.now().isoformat()
+
     c.execute(
         """
-        SELECT id, name, deadline, missed, category, status,
-               estimated_minutes, actual_minutes, priority_score
+        SELECT id, name, deadline, status, category, estimated_minutes,
+               actual_minutes, missed, priority_score, last_activity_at
         FROM tasks
         WHERE user_id=?
+        ORDER BY priority_score DESC, deadline ASC
         """,
         (user_id,),
     )
     rows = c.fetchall()
 
+    tasks = []
+    total_estimated = 0
+    total_actual = 0
+    overdue = []
+    high_priority = []
     today = datetime.date.today()
-    overview = []
+
     for row in rows:
-        task_id, name, deadline_value, missed, category, status, est_minutes, act_minutes, score = row
+        deadline_value = row[2]
+        deadline_iso = None
         days_until = None
         if deadline_value:
             try:
-                days_until = (datetime.date.fromisoformat(str(deadline_value)) - today).days
+                deadline_iso = datetime.date.fromisoformat(str(deadline_value)).isoformat()
+                days_until = (datetime.date.fromisoformat(deadline_iso) - today).days
             except ValueError:
-                days_until = None
+                deadline_iso = str(deadline_value)
 
-        est_minutes = est_minutes or 0
-        act_minutes = act_minutes or 0
-        progress = None
-        if est_minutes > 0:
-            progress = round((act_minutes / est_minutes) * 100, 1)
-
-        tips = []
-        if days_until is None:
-            tips.append("Add a clear deadline so the planner can prioritize it.")
-        elif days_until < 0:
-            tips.append("Deadline passed—reschedule the work and notify stakeholders.")
-        elif days_until <= 1:
-            tips.append("Block at least one deep-focus session today.")
-        elif days_until <= 3:
-            tips.append("Reserve a high-energy block within the next 48 hours.")
-        elif est_minutes and (est_minutes - act_minutes) <= 60:
-            tips.append("You're close—schedule a final push to wrap it up.")
-
-        if progress is not None and progress < 40:
-            tips.append("Momentum is low; start with a short pomodoro to regain flow.")
-
-        if missed:
-            tips.append("Review missed slots and adjust the schedule for better fit.")
-
-        if not tips:
-            tips.append("Keep the pace steady and maintain your habit streak.")
-
-        overview.append({
-            'id': task_id,
-            'name': name,
-            'category': category,
-            'status': status,
-            'deadline': deadline_value,
+        entry = {
+            'id': row[0],
+            'name': row[1],
+            'deadline': deadline_iso,
+            'status': row[3],
+            'category': row[4],
+            'estimatedMinutes': row[5],
+            'actualMinutes': row[6],
+            'missedSlots': row[7],
+            'priorityScore': row[8],
+            'lastActivityAt': row[9],
             'daysUntilDeadline': days_until,
-            'missedSlots': missed,
-            'estimatedMinutes': est_minutes,
-            'actualMinutes': act_minutes,
-            'progressPercent': progress,
-            'priorityScore': score,
-            'suggestion': tips[0],
-        })
+        }
+        tasks.append(entry)
+        total_estimated += row[5] or 0
+        total_actual += row[6] or 0
 
-    overview.sort(key=lambda entry: entry.get('priorityScore', 0), reverse=True)
-    return jsonify({
-        'generated': datetime.datetime.now().isoformat(),
-        'tasks': overview,
-    })
+        if deadline_value and days_until is not None and days_until < 0:
+            overdue.append(entry)
+        if (row[8] or 0) >= 80:
+            high_priority.append(entry)
 
-# Analyze user list (simple: count tasks, avg time)
-@app.route('/analyze_list')
-def analyze_list():
-    user_id = session.get('user_id', 'default')
-    c.execute("SELECT COUNT(*), AVG(hours_daily) FROM tasks WHERE user_id=?", (user_id,))
-    count, avg_hours = c.fetchone()
-    return jsonify({'total_tasks': count, 'avg_daily_hours': avg_hours})
+    c.execute(
+        "SELECT COALESCE(SUM(duration_minutes), 0) FROM task_sessions WHERE user_id=?",
+        (user_id,),
+    )
+    logged_minutes = c.fetchone()[0] or 0
+
+    response = {
+        'generated': generated_at,
+        'userId': user_id,
+        'summary': {
+            'totalTasks': len(tasks),
+            'estimatedMinutes': int(total_estimated),
+            'actualMinutes': int(total_actual),
+            'loggedSessionMinutes': int(logged_minutes),
+            'highPriorityCount': len(high_priority),
+            'overdueCount': len(overdue),
+        },
+        'tasks': tasks,
+        'highPriority': high_priority[:5],
+        'overdue': overdue,
+    }
+
+    return jsonify(response)
 
 # Detect pattern / Procrastination
 @app.route('/detect_procrastination')
 def detect_procrastination():
-    user_id = session.get('user_id', 'default')
+    user_id = current_user_id()
     c.execute("SELECT missed FROM tasks WHERE user_id=?", (user_id,))
     misses = [row[0] for row in c.fetchall()]
     avg_miss = sum(misses) / len(misses) if misses else 0
@@ -555,7 +698,7 @@ def detect_procrastination():
 # Daily Check
 @app.route('/daily_check')
 def daily_check():
-    user_id = session.get('user_id', 'default')
+    user_id = current_user_id()
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
     # Missed slots
     c.execute("SELECT * FROM schedules WHERE user_id=? AND slot_start < ? AND NOT EXISTS (SELECT 1 FROM feedback WHERE task_id=schedules.task_id)", (user_id, yesterday.isoformat()))
@@ -605,52 +748,57 @@ def log_session():
     if not task_id:
         return jsonify({'error': 'task_id is required'}), 400
 
-    user_id = session.get('user_id', 'default')
-    start_raw = payload.get('start')
-    end_raw = payload.get('end')
-    duration = payload.get('duration_minutes')
-    intensity = payload.get('intensity')
-    notes = payload.get('notes')
-
     try:
-        start_at = parse(start_raw) if start_raw else None
-    except (ValueError, TypeError):
-        start_at = None
+        user_id = current_user_id()
+        start_raw = payload.get('start')
+        end_raw = payload.get('end')
+        duration = payload.get('duration_minutes')
+        intensity = payload.get('intensity')
+        notes = payload.get('notes')
 
-    try:
-        end_at = parse(end_raw) if end_raw else None
-    except (ValueError, TypeError):
-        end_at = None
-
-    if duration is None and start_at and end_at:
-        duration = int(max((end_at - start_at).total_seconds() / 60, 0))
-    else:
         try:
-            duration = int(duration)
-        except (TypeError, ValueError):
-            duration = 0
+            start_at = parse(start_raw) if start_raw else None
+        except (ValueError, TypeError):
+            start_at = None
 
-    duration = max(duration or 0, 0)
+        try:
+            end_at = parse(end_raw) if end_raw else None
+        except (ValueError, TypeError):
+            end_at = None
 
-    c.execute(
-        """
-        INSERT INTO task_sessions (task_id, started_at, ended_at, duration_minutes, intensity, notes, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            task_id,
-            start_at.isoformat() if start_at else None,
-            end_at.isoformat() if end_at else None,
-            duration,
-            intensity,
-            notes,
-            user_id,
-        ),
-    )
+        if duration is None and start_at and end_at:
+            duration = int(max((end_at - start_at).total_seconds() / 60, 0))
+        else:
+            try:
+                duration = int(duration)
+            except (TypeError, ValueError):
+                duration = 0
 
-    status_override = payload.get('status')
-    record_task_activity(task_id, minutes=duration, status=status_override)
-    conn.commit()
+        duration = max(duration or 0, 0)
+
+        c.execute(
+            """
+            INSERT INTO task_sessions (task_id, started_at, ended_at, duration_minutes, intensity, notes, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                start_at.isoformat() if start_at else None,
+                end_at.isoformat() if end_at else None,
+                duration,
+                intensity,
+                notes,
+                user_id,
+            ),
+        )
+
+        status_override = payload.get('status')
+        record_task_activity(task_id, minutes=duration, status=status_override)
+        conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        conn.rollback()
+        app.logger.exception('Failed to log session: %s', exc)
+        return jsonify({'error': 'log_session_failed', 'details': str(exc)}), 500
 
     return jsonify({'status': 'logged', 'duration_minutes': duration})
 

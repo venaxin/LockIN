@@ -624,6 +624,85 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
       }
 
+      .google-section-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px 16px;
+        color: #2d3748;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .google-section-toggle:hover {
+        background: #edf2f7;
+      }
+
+      .google-section-toggle.collapsed .toggle-icon,
+      .google-section-toggle .toggle-icon {
+        font-size: 0.9em;
+        transform: rotate(0deg);
+        transition: transform 0.2s ease;
+      }
+
+      .google-section-toggle.expanded .toggle-icon {
+        transform: rotate(90deg);
+      }
+
+      .google-cal-content {
+        margin-top: 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        transition: max-height 0.25s ease, opacity 0.25s ease;
+        max-height: 600px;
+        overflow: hidden;
+        opacity: 1;
+      }
+
+      .google-cal-content.collapsed {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        opacity: 0;
+        border-width: 0;
+      }
+
+      .google-cal-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9em;
+        color: #4a5568;
+        margin-bottom: 12px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid #e2e8f0;
+        font-size: 0.85em;
+      }
+
+      .status-pill.success {
+        background: #c6f6d5;
+        border-color: #48bb78;
+        color: #22543d;
+      }
+
+      .status-pill.warning {
+        background: #fed7d7;
+        border-color: #fc8181;
+        color: #9b2c2c;
+      }
+
       .google-btn {
         background: white;
         border: 2px solid #4285f4;
@@ -779,7 +858,10 @@
       }
     </style>
   </head>
-  <body>
+  <body
+    data-user-id="{{ user_id }}"
+    data-user-email="{{ user_profile.get('email', '') if user_profile else '' }}"
+  >
     <div class="container">
       <div class="header">
         <div class="header-actions">
@@ -994,26 +1076,28 @@
     </div>
 
     <div class="google-cal-section" id="googleCalSection" style="display: none">
-      <h3 style="color: #2d3748; margin-bottom: 15px">
-        Google Calendar Integration
-        <span
-          id="authStatus"
-          style="font-size: 0.8em; color: #48bb78; margin-left: 10px"
-          >Not Connected</span
-        >
-      </h3>
-      <button
-        class="google-btn"
-        id="refreshEventsBtn"
-        style="display: none"
-        onclick="refreshGoogleEvents()"
-      >
-        Refresh Google Events
+      <button type="button" class="google-section-toggle" id="googleCalToggle">
+        <span>Google Calendar Integration</span>
+        <span class="toggle-icon" aria-hidden="true">▸</span>
       </button>
-      <div id="calendarEvents" style="margin-top: 15px">
-        <p style="color: #718096">
-          Connect from the top-right button to sync your Google Calendar.
-        </p>
+      <div class="google-cal-content collapsed" id="googleCalContent">
+        <div class="google-cal-status">
+          <span>Status:</span>
+          <span id="authStatus" class="status-pill">Not Connected</span>
+        </div>
+        <button
+          class="google-btn"
+          id="refreshEventsBtn"
+          style="display: none"
+          onclick="refreshGoogleEvents()"
+        >
+          Refresh Google Events
+        </button>
+        <div id="calendarEvents" style="margin-top: 15px">
+          <p style="color: #718096">
+            Connect from the top-right button to sync your Google Calendar.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -1021,37 +1105,63 @@
       const DISCOVERY_DOCS = [
         "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest",
       ];
+      const USER_ID = document.body.dataset.userId || "guest";
+      const storageKey = (base) => `${base}_${USER_ID}`;
+      const DEFAULT_STATS = {
+        completed: 0,
+        focusTime: 0,
+        streak: 0,
+        totalTasks: 0,
+      };
+
+      const deepClone = (value) => JSON.parse(JSON.stringify(value));
+      function loadStorage(base, defaultValue) {
+        try {
+          const raw = localStorage.getItem(storageKey(base));
+          if (!raw) {
+            return deepClone(defaultValue);
+          }
+          return JSON.parse(raw);
+        } catch (error) {
+          console.warn(`Failed to load ${base} from storage`, error);
+          return deepClone(defaultValue);
+        }
+      }
+
+      function saveStorage(base, value) {
+        try {
+          localStorage.setItem(storageKey(base), JSON.stringify(value));
+        } catch (error) {
+          console.warn(`Failed to persist ${base} in storage`, error);
+        }
+      }
+
+      const GOOGLE_CAL_STATE_KEY = storageKey("googleCalExpanded");
+
       // State Management
-      let tasks = JSON.parse(localStorage.getItem("tasks") || "[]");
-      let schedule = JSON.parse(localStorage.getItem("schedule") || "[]");
+      let tasks = loadStorage("tasks", []);
+      let schedule = loadStorage("schedule", []);
       let dismissedGoogleEvents = new Set(
-        JSON.parse(localStorage.getItem("dismissedGoogleEvents") || "[]").map(
-          String
-        )
+        loadStorage("dismissedGoogleEvents", []).map(String)
       );
       let notifiedSlots = new Set(
-        JSON.parse(localStorage.getItem("notifiedSlots") || "[]").map(String)
+        loadStorage("notifiedSlots", []).map(String)
       );
       let notifiedDeadlines = new Set(
-        JSON.parse(localStorage.getItem("notifiedDeadlines") || "[]").map(
-          String
-        )
+        loadStorage("notifiedDeadlines", []).map(String)
       );
       let lastMissedNotificationDate = localStorage.getItem(
-        "lastMissedNotificationDate"
+        storageKey("lastMissedNotificationDate")
       );
       let lastAiNotification = Number(
-        localStorage.getItem("lastAiNotification") || "0"
+        localStorage.getItem(storageKey("lastAiNotification")) || "0"
       );
       let activeScheduleId = null;
       let currentTask = null;
       let pomodoroInterval = null;
       let pomodoroTimeLeft = 25 * 60;
       let pomodoroPaused = false;
-      let stats = JSON.parse(
-        localStorage.getItem("stats") ||
-          '{"completed": 0, "focusTime": 0, "streak": 0, "totalTasks": 0}'
-      );
+      let stats = loadStorage("stats", DEFAULT_STATS);
 
       // Google Calendar API configuration
       const GOOGLE_CLIENT_ID = "{{ google_client_id or '' }}";
@@ -1064,9 +1174,48 @@
       let googleAccountAuthenticated = false;
       let currentWeekStart = getStartOfWeek(new Date());
 
+      function setGoogleCalendarExpanded(expand, persist = true) {
+        const toggle = document.getElementById("googleCalToggle");
+        const content = document.getElementById("googleCalContent");
+        if (!toggle || !content) return;
+
+        if (expand) {
+          content.classList.remove("collapsed");
+          toggle.classList.add("expanded");
+          toggle.setAttribute("aria-expanded", "true");
+        } else {
+          content.classList.add("collapsed");
+          toggle.classList.remove("expanded");
+          toggle.setAttribute("aria-expanded", "false");
+        }
+
+        if (persist) {
+          localStorage.setItem(GOOGLE_CAL_STATE_KEY, expand ? "1" : "0");
+        }
+      }
+
+      function setupGoogleCalendarToggle() {
+        const toggle = document.getElementById("googleCalToggle");
+        const content = document.getElementById("googleCalContent");
+        if (!toggle || !content) return;
+
+        const storedState = localStorage.getItem(GOOGLE_CAL_STATE_KEY);
+        if (storedState === "1") {
+          setGoogleCalendarExpanded(true, false);
+        } else {
+          setGoogleCalendarExpanded(false, false);
+        }
+
+        toggle.addEventListener("click", () => {
+          const shouldExpand = content.classList.contains("collapsed");
+          setGoogleCalendarExpanded(shouldExpand);
+        });
+      }
+
       // Initialize the app
       function init() {
         setDefaultDeadline();
+        setupGoogleCalendarToggle();
         const prevWeekBtn = document.getElementById("prevWeekBtn");
         const nextWeekBtn = document.getElementById("nextWeekBtn");
         if (prevWeekBtn && nextWeekBtn) {
@@ -1079,7 +1228,7 @@
         updateStats();
         startNotificationChecker();
         generateAISuggestions();
-  syncNotificationButton();
+        syncNotificationButton();
 
         fetch("/check_auth")
           .then((r) => r.json())
@@ -1178,7 +1327,6 @@
         renderCalendar();
         generateAISuggestions();
 
-        stats.totalTasks++;
         updateStats();
       }
 
@@ -1194,7 +1342,21 @@
       function generateSchedule(task) {
         const now = new Date();
         const deadline = new Date(task.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          console.warn("Invalid deadline provided for task", task);
+          return;
+        }
         const sessions = Math.ceil(task.totalHours * 2); // 30-min sessions
+
+        schedule = schedule.filter((item) => {
+          if (String(item.taskId) !== String(task.id)) {
+            return true;
+          }
+          if (item.source === "google" || item.type === "external") {
+            return true;
+          }
+          return false;
+        });
 
         let currentDate = new Date(now);
         currentDate.setHours(currentDate.getHours() + 1);
@@ -1226,7 +1388,9 @@
 
           if (timeSlot) {
             const scheduleItem = {
-              id: Date.now() + sessionsScheduled,
+              id: `${Date.now()}_${sessionsScheduled}_${Math.floor(
+                Math.random() * 100000
+              )}`,
               taskId: task.id,
               taskName: task.name,
               start: new Date(currentDate).toISOString(),
@@ -1234,9 +1398,19 @@
               type: "pomodoro",
               status: "scheduled",
               productivity: timeSlot.productivity,
+              source: "focusflow",
             };
 
-            schedule.push(scheduleItem);
+            const isDuplicate = schedule.some(
+              (entry) =>
+                String(entry.taskId) === String(scheduleItem.taskId) &&
+                entry.start === scheduleItem.start &&
+                entry.end === scheduleItem.end
+            );
+
+            if (!isDuplicate) {
+              schedule.push(scheduleItem);
+            }
             sessionsScheduled++;
 
             // Move to next 30-min slot
@@ -1255,13 +1429,14 @@
 
         // Add deadline marker to schedule
         schedule.push({
-          id: Date.now() + 999999,
+          id: `${Date.now()}_${Math.floor(Math.random() * 100000)}_deadline`,
           taskId: task.id,
           taskName: task.name + " (DEADLINE)",
           start: deadline.toISOString(),
           end: deadline.toISOString(),
           type: "deadline",
           status: "deadline",
+          source: "focusflow",
         });
 
         saveSchedule();
@@ -1775,6 +1950,7 @@
         const authStatus = document.getElementById("authStatus");
         const refreshBtn = document.getElementById("refreshEventsBtn");
         const eventsContainer = document.getElementById("calendarEvents");
+        const content = document.getElementById("googleCalContent");
 
         if (authButton) {
           if (googleAccountAuthenticated) {
@@ -1789,10 +1965,12 @@
         if (authStatus) {
           if (googleAccountAuthenticated) {
             authStatus.textContent = "Authenticated";
-            authStatus.style.color = "#48bb78";
+            authStatus.classList.add("success");
+            authStatus.classList.remove("warning");
           } else {
             authStatus.textContent = "Not Connected";
-            authStatus.style.color = "#e53e3e";
+            authStatus.classList.remove("success");
+            authStatus.classList.add("warning");
           }
         }
 
@@ -1800,6 +1978,14 @@
           refreshBtn.style.display = googleAccountAuthenticated
             ? "inline-flex"
             : "none";
+        }
+
+        if (content) {
+          if (!googleAccountAuthenticated) {
+            setGoogleCalendarExpanded(false);
+          } else if (localStorage.getItem(GOOGLE_CAL_STATE_KEY) === null) {
+            setGoogleCalendarExpanded(true);
+          }
         }
 
         if (eventsContainer) {
@@ -2410,7 +2596,7 @@
 
         lastMissedNotificationDate = todayKey;
         localStorage.setItem(
-          "lastMissedNotificationDate",
+          storageKey("lastMissedNotificationDate"),
           lastMissedNotificationDate
         );
       }
@@ -2465,7 +2651,10 @@
         }
 
         lastAiNotification = Date.now();
-        localStorage.setItem("lastAiNotification", String(lastAiNotification));
+        localStorage.setItem(
+          storageKey("lastAiNotification"),
+          String(lastAiNotification)
+        );
 
         fetch("/ai_insights", {
           method: "POST",
@@ -2500,9 +2689,54 @@
         );
       }
 
-      // Update statistics
+      function calculateStreak() {
+        const completedDays = new Set();
+        schedule.forEach((item) => {
+          if (item.status !== "completed") return;
+          const reference = item.end || item.start;
+          if (!reference) return;
+          const completedDate = new Date(reference);
+          if (Number.isNaN(completedDate.getTime())) return;
+          completedDays.add(completedDate.toDateString());
+        });
+
+        let streak = 0;
+        const cursor = new Date();
+        while (completedDays.has(cursor.toDateString())) {
+          streak += 1;
+          cursor.setDate(cursor.getDate() - 1);
+        }
+        return streak;
+      }
+
       function updateStats() {
-        document.getElementById("tasksCompleted").textContent = stats.completed;
+        const completedTasks = tasks.filter(
+          (task) => task.status === "completed"
+        ).length;
+        const totalHours = schedule.reduce((acc, item) => {
+          if (!item.start || !item.end) {
+            return acc;
+          }
+          const start = new Date(item.start);
+          const end = new Date(item.end);
+          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return acc;
+          }
+          const duration = Math.max((end - start) / (1000 * 60 * 60), 0);
+          return item.status === "completed" ? acc + duration : acc;
+        }, 0);
+
+        stats = {
+          completed: completedTasks,
+          focusTime: Number(totalHours.toFixed(2)),
+          streak: calculateStreak(),
+          totalTasks: tasks.length,
+        };
+
+        saveStorage("stats", stats);
+
+        document.getElementById("tasksCompleted").textContent =
+          stats.completed;
         document.getElementById(
           "focusTime"
         ).textContent = `${stats.focusTime.toFixed(1)}h`;
@@ -2515,39 +2749,31 @@
         document.getElementById(
           "completionRate"
         ).textContent = `${completionRate}%`;
-
-        localStorage.setItem("stats", JSON.stringify(stats));
       }
 
       // Save functions
       function saveTasks() {
-        localStorage.setItem("tasks", JSON.stringify(tasks));
+        saveStorage("tasks", tasks);
       }
 
       function saveSchedule() {
-        localStorage.setItem("schedule", JSON.stringify(schedule));
+        saveStorage("schedule", schedule);
         pruneNotificationCaches();
       }
 
       function saveDismissedGoogleEvents() {
-        localStorage.setItem(
+        saveStorage(
           "dismissedGoogleEvents",
-          JSON.stringify(Array.from(dismissedGoogleEvents))
+          Array.from(dismissedGoogleEvents)
         );
       }
 
       function saveNotifiedSlots() {
-        localStorage.setItem(
-          "notifiedSlots",
-          JSON.stringify(Array.from(notifiedSlots))
-        );
+        saveStorage("notifiedSlots", Array.from(notifiedSlots));
       }
 
       function saveNotifiedDeadlines() {
-        localStorage.setItem(
-          "notifiedDeadlines",
-          JSON.stringify(Array.from(notifiedDeadlines))
-        );
+        saveStorage("notifiedDeadlines", Array.from(notifiedDeadlines));
       }
 
       function pruneNotificationCaches() {
@@ -2564,9 +2790,7 @@
       // }
 
       function syncNotificationButton() {
-        const button = document.getElementById(
-          "notificationPermissionButton"
-        );
+        const button = document.getElementById("notificationPermissionButton");
         if (!button) return;
 
         if (!("Notification" in window)) {
@@ -2582,10 +2806,7 @@
         }
 
         button.disabled = false;
-        button.classList.remove(
-          "notification-active",
-          "notification-blocked"
-        );
+        button.classList.remove("notification-active", "notification-blocked");
 
         const permission = Notification.permission;
         if (permission === "granted") {
