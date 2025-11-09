@@ -1554,7 +1554,9 @@
         <div class="insight-card">
           <div class="insight-header">
             <h3>Procrastination Pulse</h3>
-            <span class="risk-chip state-none" id="procrastinationScore">--%</span>
+            <span class="risk-chip state-none" id="procrastinationScore"
+              >--%</span
+            >
           </div>
           <p class="insight-message" id="procrastinationMessage">
             We need a little more data before we can surface trends.
@@ -3120,10 +3122,11 @@
                 ? (item.count / totalMissed) * 100
                 : 0;
             const safePercent = Math.max(0, Math.min(basePercent, 100));
-            const label = item.label || `${item.day || ""} • ${item.time || ""}`;
-            const descriptor = `${item.count || 0}× missed • ${safePercent.toFixed(
-              1
-            )}%`;
+            const label =
+              item.label || `${item.day || ""} • ${item.time || ""}`;
+            const descriptor = `${
+              item.count || 0
+            }× missed • ${safePercent.toFixed(1)}%`;
             return `
               <div class="hotspot-item">
                 <div class="hotspot-row">
