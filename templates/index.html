@@ -295,6 +295,22 @@
         gap: 10px;
       }
 
+      .calendar-scroll {
+        max-height: 720px;
+        overflow-y: auto;
+        padding-right: 6px;
+        scroll-behavior: smooth;
+      }
+
+      .calendar-scroll::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .calendar-scroll::-webkit-scrollbar-thumb {
+        background: rgba(102, 126, 234, 0.35);
+        border-radius: 4px;
+      }
+
       .week-view-header,
       .week-view-grid {
         display: grid;
@@ -1171,6 +1187,8 @@
       let calendarApiLoaded = false;
       let googleAccountAuthenticated = false;
       let currentWeekStart = getStartOfWeek(new Date());
+  let calendarScrollInitialized = false;
+  let userAdjustedCalendarScroll = false;
 
       function setGoogleCalendarExpanded(expand, persist = true) {
         const toggle = document.getElementById("googleCalToggle");
@@ -1208,6 +1226,38 @@
           const shouldExpand = content.classList.contains("collapsed");
           setGoogleCalendarExpanded(shouldExpand);
         });
+      }
+
+      function applyCalendarScrollFocus() {
+        const scrollContainer = document.getElementById("calendarScroll");
+        if (!scrollContainer) {
+          return;
+        }
+
+        if (!calendarScrollInitialized) {
+          scrollContainer.addEventListener("scroll", () => {
+            if (scrollContainer.dataset.lockScroll === "1") {
+              return;
+            }
+            userAdjustedCalendarScroll = true;
+            scrollContainer.dataset.userAdjusted = "true";
+          });
+        }
+
+        if (!userAdjustedCalendarScroll) {
+          scrollContainer.dataset.lockScroll = "1";
+          const offset = Math.max(
+            0,
+            (DEFAULT_CALENDAR_VIEW_START - CALENDAR_DAY_START) *
+              CALENDAR_SLOT_HEIGHT
+          );
+          scrollContainer.scrollTop = offset;
+          requestAnimationFrame(() => {
+            scrollContainer.dataset.lockScroll = "0";
+          });
+        }
+
+        calendarScrollInitialized = true;
       }
 
       // Initialize the app
@@ -1681,9 +1731,11 @@
           .join("");
       }
 
-      const CALENDAR_DAY_START = 8;
-      const CALENDAR_DAY_END = 20;
-      const CALENDAR_SLOT_HEIGHT = 60;
+  const CALENDAR_DAY_START = 0;
+  const CALENDAR_DAY_END = 23;
+  const DEFAULT_CALENDAR_VIEW_START = 8;
+  const DEFAULT_CALENDAR_VIEW_END = 20;
+  const CALENDAR_SLOT_HEIGHT = 60;
 
       function formatCalendarTime(date) {
         return date.toLocaleTimeString([], {
@@ -1912,7 +1964,10 @@
 
         bodyHtml += "</div>";
 
-        container.innerHTML = headerHtml + bodyHtml;
+        const scrollWrapper = `<div class="calendar-scroll" id="calendarScroll">${bodyHtml}</div>`;
+        container.innerHTML = headerHtml + scrollWrapper;
+
+        applyCalendarScrollFocus();
 
         const weekEnd = new Date(startOfWeek);
         weekEnd.setDate(startOfWeek.getDate() + 6);
@@ -2534,6 +2589,19 @@
         if (now.getHours() >= 12) {
           return;
         }
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const endOfToday = new Date(startOfToday);
+        endOfToday.setHours(23, 59, 59, 999);
+        const nowTime = now.getTime();
+        const minInterval = 5 * 60 * 1000;
+        if (
+          window.focusflowLastDeadlineCheck &&
+          nowTime - window.focusflowLastDeadlineCheck < minInterval
+        ) {
+          return;
+        }
+        window.focusflowLastDeadlineCheck = nowTime;
         notifiedDeadlines = new Set(
           Array.from(notifiedDeadlines).filter((key) => key.endsWith(todayKey))
         );
@@ -2543,7 +2611,12 @@
             return;
           }
           const deadlineDate = new Date(task.deadline);
-          if (!isSameDay(deadlineDate, now)) {
+          if (
+            Number.isNaN(deadlineDate.getTime()) ||
+            deadlineDate < startOfToday ||
+            deadlineDate > endOfToday ||
+            !isSameDay(deadlineDate, now)
+          ) {
             return;
           }
           const key = `${task.id}_${todayKey}`;
