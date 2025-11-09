@@ -520,21 +520,18 @@ def seed_mock_data(user_id: str) -> None:
     c.execute("SELECT id, category FROM tasks WHERE user_id=?", (user_id,))
     seeded_tasks = [(row['id'], row['category']) for row in c.fetchall()]
 
-    history_cutoff = (now - datetime.timedelta(days=2)).isoformat()
-    c.execute(
-        "SELECT COUNT(*) FROM task_sessions WHERE user_id=? AND started_at < ?",
-        (user_id, history_cutoff),
-    )
-    if (c.fetchone() or (0,))[0] == 0:
-        seed_productivity_history(seeded_tasks, user_id, now)
+    if seeded_tasks:
+        seed_productivity_history(seeded_tasks, user_id, now, history_days=120)
 
     conn.commit()
 
 
 def seed_productivity_history(task_rows: List[Tuple[int, Optional[str]]], user_id: str,
-                              anchor: datetime.datetime) -> None:
+                              anchor: datetime.datetime, history_days: int = 90) -> None:
     if not task_rows:
         return
+
+    history_days = max(7, history_days)
 
     intensity_options = ['light', 'moderate', 'deep']
     notes_templates = [
@@ -542,17 +539,27 @@ def seed_productivity_history(task_rows: List[Tuple[int, Optional[str]]], user_i
         'Focus sprint logged automatically.',
         'Historical session to warm up dashboard.',
     ]
+    missed_reasons = [
+        'energy dip',
+        'unexpected meeting',
+        'context switching',
+        'needed break',
+        'priority shift',
+    ]
 
-    for day_offset in range(3, 15):
+    for day_offset in range(3, history_days + 3):
         day = anchor - datetime.timedelta(days=day_offset)
-        session_count = random.randint(1, 3)
+        session_count = random.randint(2, 4)
 
         for _ in range(session_count):
             task_id, category = random.choice(task_rows)
             duration = random.choice([25, 30, 45, 50, 60])
-            start_hour = random.choice([8, 9, 10, 13, 14, 15, 20])
-            start_time = datetime.datetime.combine(day.date(), datetime.time(start_hour, 0))
-            start_time += datetime.timedelta(minutes=random.choice([0, 15, 30, 45]))
+            start_hour = random.choice([6, 7, 8, 9, 10, 12, 13, 14, 15, 19, 20])
+            start_minute = random.choice([0, 15, 30, 45])
+            start_time = datetime.datetime.combine(
+                day.date(),
+                datetime.time(start_hour, start_minute),
+            )
             end_time = start_time + datetime.timedelta(minutes=duration)
 
             c.execute(
@@ -574,8 +581,8 @@ def seed_productivity_history(task_rows: List[Tuple[int, Optional[str]]], user_i
             )
             record_task_activity(task_id, minutes=duration, activity_time=end_time)
 
-        focus_score = round(random.uniform(0.55, 0.9), 2)
-        risk_score = round(random.uniform(0.05, 0.45), 2)
+        focus_score = round(random.uniform(0.55, 0.92), 2)
+        risk_score = round(random.uniform(0.05, 0.58), 2)
         exemplar_task_id, exemplar_category = random.choice(task_rows)
         metadata = {
             'category': exemplar_category or 'general',
@@ -601,6 +608,66 @@ def seed_productivity_history(task_rows: List[Tuple[int, Optional[str]]], user_i
             ),
         )
 
+        missed_slots = random.choices([0, 1, 2], weights=[2, 5, 3], k=1)[0]
+        for _ in range(missed_slots):
+            miss_task_id, _miss_category = random.choice(task_rows)
+            miss_hour = random.choice([6, 7, 8, 11, 13, 16, 19, 21, 22])
+            miss_minute = random.choice([0, 15, 30, 45])
+            miss_start = datetime.datetime.combine(
+                day.date(),
+                datetime.time(miss_hour, miss_minute),
+            )
+            miss_duration = random.choice([30, 45, 60])
+            miss_end = miss_start + datetime.timedelta(minutes=miss_duration)
+
+            c.execute(
+                """
+                INSERT INTO schedules (task_id, slot_start, slot_end, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    miss_task_id,
+                    miss_start.isoformat(),
+                    miss_end.isoformat(),
+                    user_id,
+                ),
+            )
+            schedule_id = c.lastrowid
+            c.execute(
+                """
+                INSERT INTO reasons (schedule_id, reason, timestamp)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    schedule_id,
+                    random.choice(missed_reasons),
+                    (miss_end + datetime.timedelta(minutes=random.randint(15, 120))).isoformat(),
+                ),
+            )
+            c.execute(
+                "UPDATE tasks SET missed = COALESCE(missed, 0) + 1 WHERE id = ?",
+                (miss_task_id,),
+            )
+
+    conn.commit()
+
+
+def ensure_history_backfill(user_id: str) -> None:
+    c.execute(
+        "SELECT COUNT(*) FROM task_sessions WHERE user_id=? AND started_at < datetime('now', '-45 day')",
+        (user_id,),
+    )
+    if (c.fetchone() or (0,))[0] > 0:
+        return
+
+    c.execute("SELECT id, COALESCE(category, 'general') AS category FROM tasks WHERE user_id=?", (user_id,))
+    task_rows = [(row['id'], row['category']) for row in c.fetchall()]
+    if not task_rows:
+        return
+
+    seed_productivity_history(task_rows, user_id, datetime.datetime.now(), history_days=120)
+
+
 def get_calendar_service():
     if 'credentials' not in session:
         return None
@@ -620,6 +687,7 @@ def index():
         c.execute('SELECT COUNT(*) FROM tasks WHERE user_id=?', (user_id,))
         if (c.fetchone() or (0,))[0] == 0:
             seed_mock_data(user_id)
+    ensure_history_backfill(user_id)
     return render_template(
         'index.html',
         google_client_id=os.getenv('GOOGLE_CLIENT_ID'),
@@ -1273,6 +1341,18 @@ def analytics_procrastination():
 
         cursor.execute(
             """
+            SELECT s.slot_start
+            FROM reasons r
+            JOIN schedules s ON s.id = r.schedule_id
+            WHERE s.user_id=? AND s.slot_start IS NOT NULL
+              AND s.slot_start >= datetime('now', '-120 day')
+            """,
+            (user_id,),
+        )
+        hotspot_rows = cursor.fetchall()
+
+        cursor.execute(
+            """
             SELECT s.slot_start, r.reason, r.timestamp, t.name AS task_name
             FROM reasons r
             JOIN schedules s ON s.id = r.schedule_id
@@ -1283,7 +1363,7 @@ def analytics_procrastination():
             """,
             (user_id,),
         )
-        reason_rows = cursor.fetchall()
+        recent_reason_rows = cursor.fetchall()
 
         cursor.execute(
             """
@@ -1313,7 +1393,23 @@ def analytics_procrastination():
 
     task_insights: List[Dict[str, Any]] = []
     category_risks: Dict[str, List[float]] = defaultdict(list)
+    category_counts: Dict[str, int] = defaultdict(int)
     risk_values: List[float] = []
+
+    hotspot_counts: Dict[Tuple[str, int, int, int], int] = defaultdict(int)
+    for row in hotspot_rows:
+        slot_start = coerce_datetime(row['slot_start'])
+        if not slot_start:
+            continue
+        bucket_minute = (slot_start.minute // 30) * 30
+        bucket_time = slot_start.replace(minute=bucket_minute, second=0, microsecond=0)
+        key = (
+            bucket_time.strftime('%A'),
+            bucket_time.weekday(),
+            bucket_time.hour,
+            bucket_minute,
+        )
+        hotspot_counts[key] += 1
 
     today = datetime.date.today()
     for row in task_rows:
@@ -1323,6 +1419,8 @@ def analytics_procrastination():
         days_until = None
         if deadline_date:
             days_until = (deadline_date - today).days
+
+        category_counts[category_slug] += 1
 
         progress_total = row['estimated_minutes'] or 0
         actual_minutes = row['actual_minutes'] or 0
@@ -1410,7 +1508,20 @@ def analytics_procrastination():
                 'openTasks': len(values),
             }
         )
+    seen_categories = {entry['category'] for entry in category_summary}
+    for slug, label in TASK_CATEGORY_CHOICES.items():
+        if slug in seen_categories:
+            continue
+        category_summary.append(
+            {
+                'category': slug,
+                'label': label,
+                'avgRisk': 0.0,
+                'openTasks': category_counts.get(slug, 0),
+            }
+        )
     category_summary.sort(key=lambda entry: entry['avgRisk'], reverse=True)
+    category_risk_top_ten = category_summary[:10]
 
     hour_totals: Dict[int, int] = defaultdict(int)
     hour_counts: Dict[int, int] = defaultdict(int)
@@ -1435,7 +1546,7 @@ def analytics_procrastination():
     slump_windows = slump_windows[:3]
 
     recent_reasons: List[Dict[str, Any]] = []
-    for row in reason_rows:
+    for row in recent_reason_rows:
         timestamp_dt = coerce_datetime(row['timestamp'])
         slot_start = coerce_datetime(row['slot_start'])
         recent_reasons.append(
@@ -1446,6 +1557,29 @@ def analytics_procrastination():
                 'taskName': row['task_name'] or 'Focus Block',
             }
         )
+
+    total_missed_events = sum(hotspot_counts.values())
+    missed_hotspots: List[Dict[str, Any]] = []
+    for (day_name, weekday_index, hour, minute), count in sorted(
+        hotspot_counts.items(),
+        key=lambda kv: kv[1],
+        reverse=True,
+    ):
+        time_display = datetime.time(hour, minute).strftime('%I:%M %p')
+        if time_display.startswith('0'):
+            time_display = time_display[1:]
+        missed_hotspots.append(
+            {
+                'label': f"{day_name[:3]} • {time_display}",
+                'day': day_name,
+                'weekdayIndex': weekday_index,
+                'time': time_display,
+                'hour': f"{hour:02d}:{minute:02d}",
+                'count': count,
+                'percent': round((count / total_missed_events) * 100, 1) if total_missed_events else 0.0,
+            }
+        )
+    missed_hotspots = missed_hotspots[:5]
 
     risk_messages = {
         'high': 'Multiple tasks are slipping—schedule recovery blocks today.',
@@ -1463,8 +1597,11 @@ def analytics_procrastination():
         'tasksAnalyzed': len(task_insights),
         'atRiskTask': at_risk_task,
         'categoryRisk': category_summary,
+        'categoryRiskTopTen': category_risk_top_ten,
         'slumpWindows': slump_windows,
         'recentReasons': recent_reasons,
+        'missedHotspots': missed_hotspots,
+        'missedTotal': total_missed_events,
     }
 
     return jsonify(response)

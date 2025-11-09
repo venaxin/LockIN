@@ -768,6 +768,235 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
       }
 
+      .procrastination-panel {
+        margin-top: 20px;
+        display: none;
+        gap: 18px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .procrastination-panel.active {
+        display: grid;
+      }
+
+      .insight-card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 18px 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .insight-card-wide {
+        grid-column: 1 / -1;
+      }
+
+      .insight-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .insight-header h3,
+      .insight-header h4 {
+        color: #2d3748;
+      }
+
+      .risk-chip {
+        font-size: 0.9em;
+        font-weight: 700;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #edf2f7;
+        color: #2d3748;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+
+      .risk-chip.state-high {
+        background: #fed7d7;
+        color: #9b2c2c;
+      }
+
+      .risk-chip.state-mid {
+        background: #faf089;
+        color: #b7791f;
+      }
+
+      .risk-chip.state-low {
+        background: #c6f6d5;
+        color: #276749;
+      }
+
+      .risk-chip.state-none {
+        background: #e2e8f0;
+        color: #2d3748;
+      }
+
+      .insight-message {
+        color: #4a5568;
+        font-size: 0.95em;
+        line-height: 1.5;
+      }
+
+      .insight-subtitle {
+        color: #718096;
+        font-size: 0.85em;
+      }
+
+      .insight-meta {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+
+      .insight-label {
+        display: block;
+        font-size: 0.75em;
+        text-transform: uppercase;
+        color: #a0aec0;
+        letter-spacing: 0.04em;
+      }
+
+      .insight-value {
+        font-size: 1.3em;
+        font-weight: 700;
+        color: #2d3748;
+      }
+
+      .hotspot-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .hotspot-item {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #f7fafc;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .hotspot-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      .hotspot-meta {
+        font-size: 0.78em;
+        color: #718096;
+        margin-top: 4px;
+      }
+
+      .hotspot-meter {
+        position: relative;
+        height: 6px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+
+      .hotspot-meter-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        background: linear-gradient(90deg, #fc8181, #ed64a6);
+        transition: width 0.3s ease;
+      }
+
+      .category-risk-table {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .category-risk-row {
+        display: grid;
+        grid-template-columns: 36px 1fr minmax(120px, 1fr) 60px;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .category-risk-rank {
+        font-weight: 700;
+        color: #4a5568;
+      }
+
+      .category-risk-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .category-risk-label {
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      .category-risk-open {
+        font-size: 0.75em;
+        color: #718096;
+      }
+
+      .category-risk-bar {
+        position: relative;
+        height: 8px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+      }
+
+      .category-risk-bar-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        background: linear-gradient(90deg, #63b3ed, #805ad5);
+        transition: width 0.3s ease;
+      }
+
+      .category-risk-value {
+        font-weight: 700;
+        color: #2d3748;
+        text-align: right;
+      }
+
+      .insight-empty {
+        font-size: 0.85em;
+        color: #718096;
+      }
+
+      @media (max-width: 768px) {
+        .category-risk-row {
+          grid-template-columns: 28px 1fr;
+          grid-template-rows: auto auto;
+          row-gap: 6px;
+        }
+
+        .category-risk-bar,
+        .category-risk-value {
+          grid-column: 1 / -1;
+        }
+
+        .category-risk-value {
+          text-align: left;
+        }
+      }
+
       .stats-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -820,6 +1049,31 @@
 
       .suggestion-item:hover {
         transform: translateX(5px);
+      }
+
+      .suggestion-item-coach {
+        cursor: default;
+        background: #fff5eb;
+      }
+
+      .suggestion-item-static {
+        cursor: default;
+      }
+
+      .suggestion-item-static:hover {
+        transform: none;
+      }
+
+      .suggestion-badge {
+        display: inline-block;
+        border-radius: 999px;
+        background: #edf2f7;
+        color: #2d3748;
+        font-size: 0.7em;
+        font-weight: 600;
+        padding: 2px 8px;
+        margin-left: 6px;
+        vertical-align: middle;
       }
 
       .pomodoro-timer {
@@ -1295,6 +1549,48 @@
           </div>
         </div>
       </div>
+
+      <div class="procrastination-panel" id="procrastinationPanel">
+        <div class="insight-card">
+          <div class="insight-header">
+            <h3>Procrastination Pulse</h3>
+            <span class="risk-chip state-none" id="procrastinationScore">--%</span>
+          </div>
+          <p class="insight-message" id="procrastinationMessage">
+            We need a little more data before we can surface trends.
+          </p>
+          <div class="insight-meta">
+            <div>
+              <span class="insight-label">Tasks Analyzed</span>
+              <span class="insight-value" id="procrastinationTasks">0</span>
+            </div>
+            <div>
+              <span class="insight-label">Missed Slots</span>
+              <span class="insight-value" id="procrastinationMissed">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="insight-header">
+            <h4>Hotspot Timings</h4>
+          </div>
+          <p class="insight-subtitle">
+            Day and time windows where focus blocks tend to slip.
+          </p>
+          <div id="hotspotList" class="hotspot-list"></div>
+        </div>
+
+        <div class="insight-card insight-card-wide">
+          <div class="insight-header">
+            <h4>Category Risk Table</h4>
+          </div>
+          <p class="insight-subtitle">
+            % chance of procrastination by task type.
+          </p>
+          <div id="categoryRiskRows" class="category-risk-table"></div>
+        </div>
+      </div>
     </div>
 
     <div class="floating-task-entry" id="floatingTaskEntry">
@@ -1570,6 +1866,13 @@
         totalTasks: 0,
       };
 
+      let analyticsProductivity = null;
+      let analyticsProcrastination = null;
+      let aiCoachMessage = null;
+      let pendingYesterdayTasks = [];
+      let analyticsRefreshIntervalId = null;
+      let analyticsRefreshTimeoutId = null;
+
       const deepClone = (value) => JSON.parse(JSON.stringify(value));
       function loadStorage(base, defaultValue) {
         try {
@@ -1592,7 +1895,149 @@
         }
       }
 
+      function formatShortDate(value) {
+        if (!value) {
+          return "No deadline";
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return String(value);
+        }
+        return parsed.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function formatMinutesToHours(minutes) {
+        if (!minutes || Number.isNaN(Number(minutes))) {
+          return "0h";
+        }
+        const hours = Number(minutes) / 60;
+        if (hours >= 1) {
+          return `${hours.toFixed(
+            Math.abs(hours - Math.round(hours)) < 0.05 ? 0 : 1
+          )}h`;
+        }
+        return `${Math.round(minutes)}m`;
+      }
+
+      function labelFromCategory(slug, fallback) {
+        if (fallback) {
+          return fallback;
+        }
+        if (!slug) {
+          return "General";
+        }
+        return slug
+          .toString()
+          .replace(/[_-]+/g, " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+      }
+
       const GOOGLE_CAL_STATE_KEY = storageKey("googleCalExpanded");
+
+      async function refreshAnalytics(options = {}) {
+        const { silent = false } = options;
+        try {
+          const [productivityRes, procrastinationRes] = await Promise.all([
+            fetch("/analytics/productivity", {
+              headers: { Accept: "application/json" },
+            }),
+            fetch("/analytics/procrastination", {
+              headers: { Accept: "application/json" },
+            }),
+          ]);
+
+          if (!productivityRes.ok || !procrastinationRes.ok) {
+            throw new Error("Analytics endpoints unavailable");
+          }
+
+          analyticsProductivity = await productivityRes.json();
+          analyticsProcrastination = await procrastinationRes.json();
+          applyAnalyticsOutputs();
+        } catch (error) {
+          if (!silent) {
+            console.warn("Failed to refresh analytics", error);
+          }
+        }
+      }
+
+      function applyAnalyticsOutputs() {
+        updateStats();
+        updateProductivityMeter();
+        generateAISuggestions();
+        renderProcrastinationInsights();
+      }
+
+      function scheduleAnalyticsRefresh(delay = 3000) {
+        if (analyticsRefreshTimeoutId) {
+          clearTimeout(analyticsRefreshTimeoutId);
+        }
+        analyticsRefreshTimeoutId = setTimeout(() => {
+          refreshAnalytics({ silent: true });
+          analyticsRefreshTimeoutId = null;
+        }, delay);
+      }
+
+      function applyAnalyticsStats() {
+        if (!analyticsProductivity) {
+          return;
+        }
+
+        const summary = analyticsProductivity.summary || {};
+        const tasksFromServer = Array.isArray(analyticsProductivity.tasks)
+          ? analyticsProductivity.tasks
+          : [];
+        const completedTasks = tasksFromServer.filter(
+          (task) => task && task.status === "completed"
+        ).length;
+        const totalTasks =
+          typeof summary.totalTasks === "number"
+            ? summary.totalTasks
+            : Math.max(tasksFromServer.length, 0);
+
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const timeline = Array.isArray(analyticsProductivity.timeline)
+          ? analyticsProductivity.timeline
+          : [];
+        const todayEntry = timeline.find((entry) => entry.date === todayIso);
+        const focusMinutesToday = todayEntry ? todayEntry.minutes || 0 : 0;
+        const focusHoursToday = focusMinutesToday / 60;
+
+        const streak = analyticsProductivity.streakDays || 0;
+        const completionRate =
+          totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        stats = {
+          completed: completedTasks,
+          focusTime: focusHoursToday,
+          streak,
+          totalTasks,
+        };
+
+        saveStorage("stats", stats);
+
+        const completedNode = document.getElementById("tasksCompleted");
+        if (completedNode) {
+          completedNode.textContent = completedTasks;
+        }
+
+        const focusNode = document.getElementById("focusTime");
+        if (focusNode) {
+          focusNode.textContent = `${focusHoursToday.toFixed(1)}h`;
+        }
+
+        const streakNode = document.getElementById("streakDays");
+        if (streakNode) {
+          streakNode.textContent = streak;
+        }
+
+        const completionNode = document.getElementById("completionRate");
+        if (completionNode) {
+          completionNode.textContent = `${completionRate}%`;
+        }
+      }
 
       // State Management
       let tasks = loadStorage("tasks", []);
@@ -1752,6 +2197,14 @@
         updateStats();
         startNotificationChecker();
         generateAISuggestions();
+        refreshAnalytics({ silent: true });
+        runAiInsights();
+        if (!analyticsRefreshIntervalId) {
+          analyticsRefreshIntervalId = setInterval(
+            () => refreshAnalytics({ silent: true }),
+            12 * 60 * 1000
+          );
+        }
         syncNotificationButton();
         checkNotificationPermissionOnLoad();
 
@@ -2397,20 +2850,17 @@
         saveSchedule();
       }
 
-      // Generate AI suggestions for optimal work times
-      function generateAISuggestions() {
-        const suggestions = [];
+      function buildFallbackSuggestions() {
+        const fallback = [];
         const now = new Date();
         const hour = now.getHours();
 
-        // Analyze user patterns (simulated)
         const productivityScore = {
           morning: 0.9,
           afternoon: 0.7,
           evening: 0.6,
         };
 
-        // Get high-priority tasks
         const urgentTasks = tasks
           .filter((t) => t.status !== "completed")
           .sort((a, b) => b.priority - a.priority)
@@ -2426,13 +2876,107 @@
             suggestedTime = "Tomorrow morning (9-11 AM)";
           }
 
-          suggestions.push({
-            task: task.name,
-            time: suggestedTime,
-            reason: `Priority: ${task.priority}/10`,
+          fallback.push({
+            title: task.name,
+            caption: suggestedTime,
+            meta: `Priority: ${task.priority}/10`,
             taskId: task.id,
           });
         });
+
+        return fallback;
+      }
+
+      // Generate AI suggestions for optimal work times
+      function generateAISuggestions() {
+        const suggestions = [];
+
+        if (analyticsProcrastination) {
+          const { atRiskTask, categoryRisk, slumpWindows } =
+            analyticsProcrastination;
+
+          if (atRiskTask) {
+            suggestions.push({
+              title: `Rescue: ${atRiskTask.name}`,
+              caption: "Highest risk task",
+              meta: [
+                atRiskTask.deadline
+                  ? `Due ${formatShortDate(atRiskTask.deadline)}`
+                  : null,
+                atRiskTask.priorityScore
+                  ? `Priority ${Math.round(atRiskTask.priorityScore)}`
+                  : null,
+                atRiskTask.daysUntil != null
+                  ? `${atRiskTask.daysUntil}d remaining`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" • "),
+              highlight: labelFromCategory(atRiskTask.category),
+            });
+          }
+
+          if (Array.isArray(categoryRisk) && categoryRisk.length) {
+            const topCategory = categoryRisk[0];
+            suggestions.push({
+              title: `Focus: ${labelFromCategory(
+                topCategory.category,
+                topCategory.label
+              )}`,
+              caption: "Category showing highest procrastination",
+              meta: `Average risk ${topCategory.avgRisk}% • ${topCategory.openTasks} tasks open`,
+            });
+          }
+
+          if (Array.isArray(slumpWindows) && slumpWindows.length) {
+            const window = slumpWindows[0];
+            suggestions.push({
+              title: `Plan energy dip around ${window.hour}`,
+              caption: "Schedule a quick reset or break",
+              meta: `${window.sessions} sessions logged • Avg ${window.avgSessionMinutes}m`,
+            });
+          }
+        }
+
+        if (pendingYesterdayTasks && pendingYesterdayTasks.length) {
+          pendingYesterdayTasks.slice(0, 3).forEach((task) => {
+            suggestions.push({
+              title: `Follow-up: ${task.name}`,
+              caption: "Pending from yesterday",
+              meta: [
+                task.deadline
+                  ? `Deadline ${formatShortDate(task.deadline)}`
+                  : null,
+                task.priorityScore
+                  ? `Priority ${Math.round(task.priorityScore)}`
+                  : null,
+                task.category ? labelFromCategory(task.category) : null,
+              ]
+                .filter(Boolean)
+                .join(" • "),
+            });
+          });
+        }
+
+        if (analyticsProductivity && analyticsProductivity.recentSessions) {
+          const session = analyticsProductivity.recentSessions[0];
+          if (session) {
+            suggestions.push({
+              title: `Repeat momentum: ${session.taskName}`,
+              caption: `Last session ${formatShortDate(session.startedAt)}`,
+              meta: `${formatMinutesToHours(
+                session.durationMinutes
+              )} • ${labelFromCategory(
+                session.category,
+                session.categoryLabel
+              )}`,
+            });
+          }
+        }
+
+        if (!suggestions.length) {
+          suggestions.push(...buildFallbackSuggestions());
+        }
 
         renderAISuggestions(suggestions);
       }
@@ -2447,21 +2991,206 @@
           return;
         }
 
-        container.innerHTML = suggestions
-          .map(
-            (s) => `
-                <div class="suggestion-item" onclick="acceptSuggestion(${s.taskId})">
-                    <strong>${s.task}</strong><br>
-                    <small style="color: #718096;">${s.time} • ${s.reason}</small>
+        const cards = [];
+
+        if (aiCoachMessage) {
+          cards.push(`
+            <div class="suggestion-item suggestion-item-coach">
+              <strong>Coach Says</strong><br>
+              <small style="color: #4a5568;">${aiCoachMessage}</small>
+            </div>
+          `);
+        }
+
+        suggestions.forEach((item) => {
+          const title = item.title || item.task || "Focus Suggestion";
+          const caption = item.caption || item.time || "";
+          const meta = item.meta || item.reason || "";
+          const badge = item.highlight
+            ? `<span class="suggestion-badge">${item.highlight}</span>`
+            : "";
+          const isClickable = item.taskId != null;
+          const clickAttr = isClickable
+            ? `onclick="acceptSuggestion('${String(item.taskId).replace(
+                /'/g,
+                "\\'"
+              )}')"`
+            : "";
+          const cardClasses = isClickable
+            ? "suggestion-item"
+            : "suggestion-item suggestion-item-static";
+
+          cards.push(`
+            <div class="${cardClasses}" ${clickAttr}>
+              <strong>${title}</strong> ${badge}<br>
+              ${
+                caption
+                  ? `<small style="color: #4a5568;">${caption}</small><br>`
+                  : ""
+              }
+              ${meta ? `<small style="color: #718096;">${meta}</small>` : ""}
+            </div>
+          `);
+        });
+
+        if (cards.length === 0) {
+          container.innerHTML =
+            '<p style="color: #718096; font-size: 0.9em;">No urgent tasks. Great job!</p>';
+          return;
+        }
+
+        container.innerHTML = cards.join("");
+      }
+
+      function renderProcrastinationInsights() {
+        const panel = document.getElementById("procrastinationPanel");
+        if (!panel) {
+          return;
+        }
+
+        if (!analyticsProcrastination) {
+          panel.classList.remove("active");
+          return;
+        }
+
+        panel.classList.add("active");
+
+        const riskState = analyticsProcrastination.riskState || "none";
+        const riskIndexRaw =
+          typeof analyticsProcrastination.riskIndex === "number"
+            ? analyticsProcrastination.riskIndex
+            : 0;
+        const riskIndex = Math.max(0, Math.min(riskIndexRaw, 100));
+        const scoreNode = document.getElementById("procrastinationScore");
+        if (scoreNode) {
+          scoreNode.textContent = `${riskIndex}%`;
+          scoreNode.classList.remove(
+            "state-low",
+            "state-mid",
+            "state-high",
+            "state-none"
+          );
+          scoreNode.classList.add(`state-${riskState}`);
+        }
+
+        const messageNode = document.getElementById("procrastinationMessage");
+        if (messageNode) {
+          messageNode.textContent =
+            analyticsProcrastination.message ||
+            "No procrastination signals yet—log more sessions to build insight.";
+        }
+
+        const tasksNode = document.getElementById("procrastinationTasks");
+        if (tasksNode) {
+          tasksNode.textContent = analyticsProcrastination.tasksAnalyzed || 0;
+        }
+
+        const missedNode = document.getElementById("procrastinationMissed");
+        if (missedNode) {
+          missedNode.textContent = analyticsProcrastination.missedTotal || 0;
+        }
+
+        renderHotspotList();
+        renderCategoryRiskRows();
+      }
+
+      function renderHotspotList() {
+        const container = document.getElementById("hotspotList");
+        if (!container) {
+          return;
+        }
+
+        const hotspots = Array.isArray(analyticsProcrastination?.missedHotspots)
+          ? analyticsProcrastination.missedHotspots.slice(0, 5)
+          : [];
+
+        if (!hotspots.length) {
+          container.innerHTML =
+            '<p class="insight-empty">No missed slot patterns detected.</p>';
+          return;
+        }
+
+        const totalMissed = analyticsProcrastination.missedTotal || 0;
+        container.innerHTML = hotspots
+          .map((item) => {
+            const basePercent =
+              typeof item.percent === "number"
+                ? item.percent
+                : totalMissed
+                ? (item.count / totalMissed) * 100
+                : 0;
+            const safePercent = Math.max(0, Math.min(basePercent, 100));
+            const label = item.label || `${item.day || ""} • ${item.time || ""}`;
+            const descriptor = `${item.count || 0}× missed • ${safePercent.toFixed(
+              1
+            )}%`;
+            return `
+              <div class="hotspot-item">
+                <div class="hotspot-row">
+                  <span>${label}</span>
+                  <span>${safePercent.toFixed(1)}%</span>
                 </div>
-            `
-          )
+                <div class="hotspot-meta">${descriptor}</div>
+                <div class="hotspot-meter">
+                  <div class="hotspot-meter-fill" style="width: ${safePercent}%"></div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      }
+
+      function renderCategoryRiskRows() {
+        const container = document.getElementById("categoryRiskRows");
+        if (!container) {
+          return;
+        }
+
+        const categories = Array.isArray(
+          analyticsProcrastination?.categoryRiskTopTen
+        )
+          ? analyticsProcrastination.categoryRiskTopTen.slice(0, 10)
+          : Array.isArray(analyticsProcrastination?.categoryRisk)
+          ? analyticsProcrastination.categoryRisk.slice(0, 10)
+          : [];
+
+        if (!categories.length) {
+          container.innerHTML =
+            '<p class="insight-empty">Need more data to calculate category risk.</p>';
+          return;
+        }
+
+        container.innerHTML = categories
+          .map((entry, index) => {
+            const percentRaw = Number(entry.avgRisk) || 0;
+            const percent = Math.max(0, Math.min(percentRaw, 100));
+            const label = entry.label || labelFromCategory(entry.category);
+            const openTasks = entry.openTasks || 0;
+            return `
+              <div class="category-risk-row">
+                <div class="category-risk-rank">${index + 1}</div>
+                <div class="category-risk-info">
+                  <span class="category-risk-label">${label}</span>
+                  <span class="category-risk-open">${openTasks} open</span>
+                </div>
+                <div class="category-risk-bar">
+                  <div class="category-risk-bar-fill" style="width: ${percent}%"></div>
+                </div>
+                <div class="category-risk-value">${percent.toFixed(1)}%</div>
+              </div>
+            `;
+          })
           .join("");
       }
 
       // Accept AI suggestion and start task
       function acceptSuggestion(taskId) {
-        const task = tasks.find((t) => t.id === taskId);
+        if (taskId == null) {
+          return;
+        }
+        const numericId = Number(taskId);
+        const lookupKey = Number.isNaN(numericId) ? String(taskId) : numericId;
+        const task = tasks.find((t) => String(t.id) === String(lookupKey));
         if (task) {
           startPomodoro(task);
         }
@@ -3918,8 +4647,13 @@
             return response.json();
           })
           .then((data) => {
-            if (data && data.message) {
-              showNotification("AI Coach", data.message.trim());
+            aiCoachMessage = data && data.message ? data.message.trim() : null;
+            pendingYesterdayTasks = Array.isArray(data.pendingYesterday)
+              ? data.pendingYesterday
+              : [];
+            generateAISuggestions();
+            if (aiCoachMessage) {
+              showNotification("AI Coach", aiCoachMessage);
             }
           })
           .catch((error) => {
@@ -3956,6 +4690,12 @@
       }
 
       function updateStats() {
+        if (analyticsProductivity) {
+          applyAnalyticsStats();
+          updateProductivityMeter();
+          return;
+        }
+
         const completedTasks = tasks.filter(
           (task) => task.status === "completed"
         ).length;
@@ -4113,6 +4853,38 @@
           return;
         }
 
+        if (analyticsProductivity) {
+          const state = analyticsProductivity.state || "none";
+          const config = PRODUCTIVITY_MEDIA[state] || PRODUCTIVITY_MEDIA.mid;
+          const rawScore = Math.max(
+            0,
+            Math.min(
+              typeof analyticsProductivity.score === "number"
+                ? analyticsProductivity.score
+                : 0,
+              100
+            )
+          );
+          const normalizedScore = rawScore / 10;
+          const message =
+            analyticsProductivity.message || config.message || "Stay focused.";
+
+          meter.classList.remove(
+            "state-low",
+            "state-mid",
+            "state-high",
+            "state-none"
+          );
+          meter.classList.add(`state-${state}`);
+
+          scoreNode.textContent = `${normalizedScore.toFixed(1)}/10`;
+          messageNode.textContent = message;
+          barNode.style.width = `${rawScore}%`;
+          botNode.src = config.bot;
+          botNode.alt = config.alt;
+          return;
+        }
+
         const { score, status } = calculateProductivityScore();
         const config = PRODUCTIVITY_MEDIA[status] || PRODUCTIVITY_MEDIA.mid;
 
@@ -4138,6 +4910,7 @@
       function saveTasks() {
         saveStorage("tasks", tasks);
         updateProductivityMeter();
+        scheduleAnalyticsRefresh();
       }
 
       function saveSchedule(options = {}) {
@@ -4148,6 +4921,7 @@
         saveStorage("schedule", schedule);
         pruneNotificationCaches();
         updateProductivityMeter();
+        scheduleAnalyticsRefresh();
       }
 
       function saveDismissedGoogleEvents() {
