@@ -58,3 +58,15 @@ As we already have a 20 min check and the end slot check we can ask the user if 
 For adding a task we will have UI drag drop slots on to a week view calendar.
 
 
+
+Task Categories:
+1. Deep Work
+2. Planning & Strategy
+3. Communication
+4. Collaboration
+5. Learning & Growth
+6. Quality & QA
+7. Operations & Admin
+8. Health & Wellness
+9. Creative Work
+10. General

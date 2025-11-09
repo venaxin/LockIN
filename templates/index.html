@@ -42,6 +42,74 @@
 "
     />
     <style>
+      .sidebar {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        padding: 22px;
+        box-shadow: 0 18px 35px rgba(15, 23, 42, 0.15);
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        gap: 20px;
+      }
+
+      .sidebar-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .sidebar-tab-button {
+        border: none;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        background: rgba(226, 232, 240, 0.6);
+        color: #334155;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.2s ease, color 0.2s ease;
+      }
+
+      .sidebar-tab-button:hover,
+      .sidebar-tab-button:focus {
+        background: rgba(148, 163, 184, 0.35);
+        transform: translateY(-1px);
+      }
+
+      .sidebar-tab-button.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #ffffff;
+        box-shadow: 0 10px 18px rgba(102, 126, 234, 0.25);
+      }
+
+      .sidebar-panel-container {
+        flex: 1;
+        margin-top: 18px;
+        position: relative;
+      }
+
+      .sidebar-tab-panel {
+        display: none;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .sidebar-tab-panel.active {
+        display: flex;
+      }
+
+      .sidebar::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .sidebar::-webkit-scrollbar-thumb {
+        background: rgba(102, 126, 234, 0.35);
+        border-radius: 999px;
+      }
+
       * {
         margin: 0;
         padding: 0;
@@ -128,26 +196,6 @@
         background: #ffffff;
       }
 
-      .sidebar {
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 20px;
-        padding: 22px;
-        box-shadow: 0 18px 35px rgba(15, 23, 42, 0.15);
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 520px;
-        overflow: hidden;
-      }
-
-      .sidebar-scroll {
-        display: flex;
-        flex-direction: column;
-        gap: 22px;
-        overflow-y: auto;
-        padding-right: 6px;
-      }
-
       .sidebar-brand {
         display: flex;
         flex-direction: column;
@@ -167,15 +215,6 @@
         color: #4a5568;
         font-weight: 600;
         font-size: 0.9rem;
-      }
-
-      .sidebar-scroll::-webkit-scrollbar {
-        width: 6px;
-      }
-
-      .sidebar-scroll::-webkit-scrollbar-thumb {
-        background: rgba(100, 116, 139, 0.35);
-        border-radius: 999px;
       }
 
       .app-main {
@@ -319,6 +358,7 @@
         border: 2px solid transparent;
         box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
         min-width: 220px;
+        width: 100%;
         transition: border-color 0.2s ease, background 0.2s ease;
       }
 
@@ -1655,10 +1695,6 @@
           padding: 18px;
         }
 
-        .sidebar-scroll {
-          gap: 18px;
-        }
-
         .app-main {
           padding: 20px;
         }
@@ -1739,45 +1775,155 @@
             />
           </div>
         </header>
-        <aside class="sidebar" id="sidebar">
-          <div class="sidebar-scroll">
-            <div class="sidebar-brand">
-              <p class="brand-tagline">Find your flow, stay locked in.</p>
+        <div class="productivity-meter state-mid" id="productivityMeter">
+          <div class="productivity-mini-top">
+            <span class="productivity-label">Today's Focus</span>
+            <span class="productivity-score" id="productivityScore">--/10</span>
+          </div>
+          <div class="productivity-mini-body">
+            <div class="productivity-bot">
+              <img
+                id="productivityBot"
+                src="{{ url_for('static', filename='images/Bot_happy.png') }}"
+                alt="Productivity bot cheering"
+              />
             </div>
-            <div class="productivity-meter state-mid" id="productivityMeter">
-              <div class="productivity-mini-top">
-                <span class="productivity-label">Today's Focus</span>
-                <span class="productivity-score" id="productivityScore"
-                  >--/10</span
-                >
-              </div>
-              <div class="productivity-mini-body">
-                <div class="productivity-bot">
-                  <img
-                    id="productivityBot"
-                    src="{{ url_for('static', filename='images/Bot_happy.png') }}"
-                    alt="Productivity bot cheering"
+            <div class="productivity-bubble">
+              <span class="productivity-message" id="productivityMessage">
+                Dialing in your momentum...
+              </span>
+            </div>
+          </div>
+          <div class="productivity-bar">
+            <div class="productivity-bar-fill" id="productivityBar"></div>
+          </div>
+        </div>
+        <aside class="sidebar" id="sidebar">
+          <div
+            class="sidebar-tabs"
+            role="tablist"
+            aria-label="Sidebar sections"
+          >
+            <button
+              class="sidebar-tab-button active"
+              type="button"
+              data-tab="add"
+              id="sidebarTabAdd"
+              role="tab"
+              aria-selected="true"
+              aria-controls="sidebarPanelAdd"
+            >
+              Add Task
+            </button>
+            <button
+              class="sidebar-tab-button"
+              type="button"
+              data-tab="ai"
+              id="sidebarTabAI"
+              role="tab"
+              aria-selected="false"
+              aria-controls="sidebarPanelAI"
+            >
+              AI Suggestions
+            </button>
+            <button
+              class="sidebar-tab-button"
+              type="button"
+              data-tab="tasks"
+              id="sidebarTabTasks"
+              role="tab"
+              aria-selected="false"
+              aria-controls="sidebarPanelTasks"
+            >
+              Active Tasks
+            </button>
+          </div>
+          <div class="sidebar-panel-container">
+            <div
+              class="sidebar-tab-panel active"
+              data-panel="add"
+              id="sidebarPanelAdd"
+              role="tabpanel"
+              aria-labelledby="sidebarTabAdd"
+              aria-hidden="false"
+            >
+              <form
+                class="sidebar-add-form"
+                id="sidebarAddTaskForm"
+                onsubmit="submitSidebarTaskForm(event)"
+              >
+                <div class="form-group">
+                  <label for="sidebarTaskName">Task Name</label>
+                  <input
+                    type="text"
+                    id="sidebarTaskName"
+                    placeholder="e.g., Deep work session"
+                    required
                   />
                 </div>
-                <div class="productivity-bubble">
-                  <span class="productivity-message" id="productivityMessage">
-                    Dialing in your momentum...
-                  </span>
+                <div class="form-group">
+                  <label for="sidebarDeadline">Deadline</label>
+                  <input type="datetime-local" id="sidebarDeadline" required />
                 </div>
-              </div>
-              <div class="productivity-bar">
-                <div class="productivity-bar-fill" id="productivityBar"></div>
+                <div class="form-group">
+                  <label for="sidebarDaysRequired">Days Required</label>
+                  <input
+                    type="number"
+                    id="sidebarDaysRequired"
+                    min="1"
+                    value="1"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="sidebarDailyHours">Daily Hours</label>
+                  <input
+                    type="number"
+                    id="sidebarDailyHours"
+                    min="0.5"
+                    step="0.5"
+                    value="2"
+                    required
+                  />
+                </div>
+                <div class="floating-task-actions" style="margin-top: 20px">
+                  <button class="btn" type="submit">Schedule It</button>
+                </div>
+                <p style="color: #64748b; font-size: 0.85rem; margin-top: 12px">
+                  Need the full planner? Tap the floating + button for advanced
+                  options.
+                </p>
+              </form>
+            </div>
+            <div
+              class="sidebar-tab-panel"
+              data-panel="ai"
+              id="sidebarPanelAI"
+              role="tabpanel"
+              aria-labelledby="sidebarTabAI"
+              aria-hidden="true"
+              hidden
+            >
+              <div class="ai-suggestions" id="aiSuggestions">
+                <h3>🤖 AI Suggestions</h3>
+                <div id="suggestionsList"></div>
               </div>
             </div>
-
-            <div class="ai-suggestions" id="aiSuggestions">
-              <h3>🤖 AI Suggestions</h3>
-              <div id="suggestionsList"></div>
-            </div>
-
-            <div class="task-list">
-              <h3 style="color: #2d3748; margin-bottom: 15px">Active Tasks</h3>
-              <div id="taskList"></div>
+            <div
+              class="sidebar-tab-panel"
+              data-panel="tasks"
+              id="sidebarPanelTasks"
+              role="tabpanel"
+              aria-labelledby="sidebarTabTasks"
+              aria-hidden="true"
+              hidden
+            >
+              <div class="task-list">
+                <h3 style="color: #2d3748; margin-bottom: 15px">
+                  Current Focus
+                </h3>
+                <div id="taskList"></div>
+              </div>
             </div>
           </div>
         </aside>
@@ -2552,6 +2698,72 @@
         });
       }
 
+      function setupSidebarTabs() {
+        const tabButtons = Array.from(
+          document.querySelectorAll(".sidebar-tab-button")
+        );
+        const panels = Array.from(
+          document.querySelectorAll(".sidebar-tab-panel")
+        );
+
+        if (!tabButtons.length || !panels.length) {
+          return;
+        }
+
+        const activate = (targetId) => {
+          if (!targetId) {
+            return;
+          }
+          const target = String(targetId);
+          tabButtons.forEach((button) => {
+            const isActive = button.dataset.tab === target;
+            button.classList.toggle("active", isActive);
+            button.setAttribute("aria-selected", isActive ? "true" : "false");
+            if (isActive) {
+              button.setAttribute("tabindex", "0");
+            } else {
+              button.setAttribute("tabindex", "-1");
+            }
+          });
+
+          panels.forEach((panel) => {
+            const isActive = panel.dataset.panel === target;
+            panel.classList.toggle("active", isActive);
+            panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+            if (isActive) {
+              panel.removeAttribute("hidden");
+            } else {
+              panel.setAttribute("hidden", "true");
+            }
+          });
+        };
+
+        tabButtons.forEach((button, index) => {
+          button.addEventListener("click", () => activate(button.dataset.tab));
+          button.addEventListener("keydown", (event) => {
+            if (!["ArrowLeft", "ArrowRight"].includes(event.key)) {
+              return;
+            }
+            event.preventDefault();
+            const direction = event.key === "ArrowRight" ? 1 : -1;
+            const nextIndex =
+              (index + direction + tabButtons.length) % tabButtons.length;
+            const nextButton = tabButtons[nextIndex];
+            if (nextButton) {
+              activate(nextButton.dataset.tab);
+              nextButton.focus();
+            }
+          });
+        });
+
+        const initial =
+          tabButtons.find((btn) => btn.classList.contains("active")) ||
+          tabButtons[0];
+        if (initial) {
+          activate(initial.dataset.tab);
+        }
+      }
+
       function applyCalendarScrollFocus() {
         const scrollContainer = document.getElementById("calendarScroll");
         if (!scrollContainer) {
@@ -2659,13 +2871,19 @@
         return d;
       }
 
-      // Set default deadline to tomorrow
-      function setDefaultDeadline() {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 7);
-        document.getElementById("deadline").value = tomorrow
-          .toISOString()
-          .slice(0, 16);
+      function getDefaultDeadlineValue() {
+        const defaultDate = new Date();
+        defaultDate.setDate(defaultDate.getDate() + 7);
+        return defaultDate.toISOString().slice(0, 16);
+      }
+
+      // Set default deadline to one week out
+      function setDefaultDeadline(targetId = "deadline") {
+        const input = document.getElementById(targetId);
+        if (!input) {
+          return;
+        }
+        input.value = getDefaultDeadlineValue();
       }
 
       function setupFloatingTaskEntry() {
@@ -2907,17 +3125,51 @@
       }
 
       // Add a new task
-      function addTask() {
-        const name = document.getElementById("taskName").value;
-        const deadline = document.getElementById("deadline").value;
-        const daysRequired = parseInt(
-          document.getElementById("daysRequired").value
-        );
-        const dailyHours = parseFloat(
-          document.getElementById("dailyHours").value
-        );
+      function addTask(overrides = null) {
+        const useOverrides = overrides && typeof overrides === "object";
+        const taskNameInput = document.getElementById("taskName");
+        const deadlineInput = document.getElementById("deadline");
+        const daysInput = document.getElementById("daysRequired");
+        const hoursInput = document.getElementById("dailyHours");
 
-        if (!name || !deadline) {
+        const name =
+          useOverrides && overrides.name != null
+            ? String(overrides.name).trim()
+            : taskNameInput
+            ? taskNameInput.value.trim()
+            : "";
+
+        const deadlineValue =
+          useOverrides && overrides.deadline != null
+            ? String(overrides.deadline)
+            : deadlineInput
+            ? deadlineInput.value
+            : "";
+
+        const daysRaw =
+          useOverrides && overrides.daysRequired != null
+            ? overrides.daysRequired
+            : daysInput
+            ? daysInput.value
+            : 1;
+
+        const hoursRaw =
+          useOverrides && overrides.dailyHours != null
+            ? overrides.dailyHours
+            : hoursInput
+            ? hoursInput.value
+            : 2;
+
+        const parsedDays = parseInt(daysRaw, 10);
+        const daysRequired = Number.isFinite(parsedDays)
+          ? Math.max(1, parsedDays)
+          : 1;
+        const parsedHours = parseFloat(hoursRaw);
+        const dailyHours = Number.isFinite(parsedHours)
+          ? Math.max(0.5, parsedHours)
+          : 2;
+
+        if (!name || !deadlineValue) {
           alert("Please fill in task name and deadline");
           return false;
         }
@@ -2925,14 +3177,14 @@
         const task = {
           id: Date.now(),
           name,
-          deadline: new Date(deadline),
+          deadline: new Date(deadlineValue),
           daysRequired,
           dailyHours,
           totalHours: daysRequired * dailyHours,
           completedHours: 0,
           status: "pending",
           priority: calculatePriority(
-            new Date(deadline),
+            new Date(deadlineValue),
             daysRequired * dailyHours
           ),
           createdAt: new Date(),
@@ -2945,10 +3197,18 @@
         generateSchedule(task);
 
         // Clear form
-        document.getElementById("taskName").value = "";
-        document.getElementById("daysRequired").value = "1";
-        document.getElementById("dailyHours").value = "2";
-        setDefaultDeadline();
+        if (!useOverrides) {
+          if (taskNameInput) {
+            taskNameInput.value = "";
+          }
+          if (daysInput) {
+            daysInput.value = "1";
+          }
+          if (hoursInput) {
+            hoursInput.value = "2";
+          }
+          setDefaultDeadline();
+        }
 
         renderTasks();
         renderCalendar();
@@ -2957,6 +3217,37 @@
         updateStats();
 
         return true;
+      }
+
+      function submitSidebarTaskForm(event) {
+        if (event) {
+          event.preventDefault();
+        }
+
+        const form = document.getElementById("sidebarAddTaskForm");
+        if (!form) {
+          return;
+        }
+
+        const nameInput = document.getElementById("sidebarTaskName");
+        const deadlineInput = document.getElementById("sidebarDeadline");
+        const daysInput = document.getElementById("sidebarDaysRequired");
+        const hoursInput = document.getElementById("sidebarDailyHours");
+
+        const created = addTask({
+          name: nameInput ? nameInput.value : "",
+          deadline: deadlineInput ? deadlineInput.value : "",
+          daysRequired: daysInput ? daysInput.value : 1,
+          dailyHours: hoursInput ? hoursInput.value : 2,
+        });
+
+        if (created) {
+          form.reset();
+          setDefaultDeadline("sidebarDeadline");
+          if (nameInput) {
+            nameInput.focus();
+          }
+        }
       }
 
       // Calculate task priority based on deadline and time required
@@ -5431,6 +5722,8 @@
         domReady = true;
         window.domReady = true;
         setupMenuOverlay();
+        setupSidebarTabs();
+        setDefaultDeadline("sidebarDeadline");
         if (window.gapiLoaded) {
           init();
         }
