@@ -13,6 +13,7 @@ import gunicorn
 import os
 from uuid import uuid4
 from typing import Optional, Dict, Any, List, Tuple
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Force correct paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -47,6 +48,9 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "assets"),
     static_url_path="/assets",
 )
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.config.setdefault('PREFERRED_URL_SCHEME', 'https')
 
 logger = app.logger
 
@@ -721,7 +725,10 @@ def get_calendar_service():
     return build('calendar', 'v3', credentials=credentials)
 
 def oauth_redirect_uri():
-    return 'http://localhost:9000/oauth2callback'
+    host = (request.host or '').split(':')[0].lower()
+    local_hosts = {'localhost', '127.0.0.1', '0.0.0.0'}
+    scheme = 'http' if host in local_hosts else 'https'
+    return url_for('oauth2callback', _external=True, _scheme=scheme)
 
 def _render_index(page_name: str):
     calendar_api_key = os.getenv('CALENDAR_API_KEY')
@@ -770,7 +777,7 @@ def debug():
 @app.route('/auth')
 def auth():
     flow = create_oauth_flow()
-    flow.redirect_uri = f"http://{request.host}/oauth2callback"
+    flow.redirect_uri = oauth_redirect_uri()
     auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
     return redirect(auth_url)
 
@@ -784,11 +791,13 @@ def logout():
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    # ALLOW HTTP FOR LOCAL DEV
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+    if request.scheme != 'https':
+        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+    else:
+        os.environ.pop('OAUTHLIB_INSECURE_TRANSPORT', None)
 
     flow = create_oauth_flow()
-    flow.redirect_uri = f"http://{request.host}/oauth2callback"
+    flow.redirect_uri = oauth_redirect_uri()
     flow.fetch_token(authorization_response=request.url)
     credentials = flow.credentials
     session['credentials'] = pickle.dumps(credentials)
