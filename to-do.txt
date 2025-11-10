@@ -70,3 +70,12 @@ Task Categories:
 8. Health & Wellness
 9. Creative Work
 10. General
+
+
+Gemini labels each task into categories (coursework, career, wellness, etc.), while your own scheduling logic tracks every focus session—start/end times, completion status, streak behavior—so you can model how consistently the user works. You then combine those signals into a 0–100 “risk” score where 0 is safe and 100 is likely to slip: the score rises with factors like tight deadlines, long remaining effort, or repeated schedule misses, and falls when the user logs on-time Pomodoro sessions. Each morning you sort tasks and suggested focus blocks by that risk value so the dashboard pushes the most at-risk work to the top.
+
+add an adaptive LSTM model fed by session history facts (task category, focus length, success/failure flags) to forecast when focus blocks will fail; and ship a Chrome/Edge extension that sits on target sites and blanks out common distractors during each predicted “slump window.” That extension ties back to the scheduler so it automatically activates when the risk model flags an at-risk slot.
+
+Lock-IN learns patterns on two layers. First, we persist every focus block in task_sessions (time, duration, completion flag, category, reason for miss) and synthesize aggregates in task_metrics (streak length, completion ratio, risk snapshots). Simple heuristics—sliding-window averages, rolling streak checks, conflict detection—catch routine triggers. When we need richer interpretation (e.g., clustering procrastination hotspots, turning activity into natural-language nudges), we send a compact feature digest to the Gemini API. Gemini doesn’t see full transcripts; it gets anonymized stats like “math tasks missed 3× after 8 PM” and returns human-readable coaching suggestions the frontend displays. So, heuristics handle scoring and scheduling, while Gemini turns those signals into adaptive guidance.
+
+You: Each session ends up in task_sessions: start/end time, duration, completion flag, category, and optional “why I skipped” tags like class overran or low energy. We aggregate into task_metrics—streak length, completion ratios, rolling averages, risk snapshots. No task content leaves the device; we just log the behavioral metadata.
